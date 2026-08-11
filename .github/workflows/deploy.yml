@@ -38,6 +38,10 @@ jobs:
           # Tells Vite to build asset paths for /<repo-name>/ instead of /
           # See vite.config.js — this only matters for the GitHub Pages build.
           GITHUB_PAGES: "true"
+          # Supabase connection — pulled from GitHub repo Settings → Secrets
+          # and variables → Actions. See README.md for how to add these.
+          VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
 
       - name: Upload build output
         uses: actions/upload-pages-artifact@v3

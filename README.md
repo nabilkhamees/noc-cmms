@@ -9,6 +9,56 @@ This is currently a **frontend demo** — all data lives in memory (React
 state) and resets on page reload. It's built to show the full workflow to
 stakeholders before wiring up a real backend.
 
+## Database setup (Supabase)
+
+This app now reads and writes real data instead of using in-memory demo
+data. It uses [Supabase](https://supabase.com) (free tier) for the
+database.
+
+### 1. Run the schema
+
+In your Supabase project → **SQL Editor** → New query → paste the entire
+contents of `supabase/schema.sql` → **Run**. This creates every table
+(sites, rooms, racks, equipment, parts, PM schedule, work orders, users)
+and loads the starting data (B90 and Auto sites, the four users).
+
+### 2. Get your credentials
+
+Supabase project → **Project Settings** (gear icon) → **API**. You need:
+- **Project URL**
+- **anon / public key**
+
+### 3. Local development
+
+Copy `.env.example` to `.env` and fill in the two values from step 2:
+```
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key
+```
+`.env` is already git-ignored — it never gets committed or pushed.
+
+### 4. Production build (GitHub Actions)
+
+The GitHub Actions workflow needs the same two values, but since `.env`
+isn't committed, you add them as **repo secrets** instead:
+
+1. On GitHub, go to your repo → **Settings** → **Secrets and variables** →
+   **Actions**
+2. Click **New repository secret**, add:
+   - Name: `VITE_SUPABASE_URL` → Value: your project URL
+   - Name: `VITE_SUPABASE_ANON_KEY` → Value: your anon key
+3. Push any change to `main` (or manually re-run the workflow from the
+   Actions tab) — the next deploy will build with these values baked in.
+
+**Is it safe to put the anon key in a public repo's secrets / built JS
+bundle?** Yes — the anon key is designed to be public-facing. Supabase's
+security model relies on **Row Level Security** (RLS) policies on each
+table to control what that key can actually do, not on keeping the key
+secret. The schema in this repo enables RLS on every table with a
+permissive "allow everyone" policy for now, suitable for an internal demo
+— tightening these policies (e.g. requiring a logged-in user) is part of
+adding real authentication, a natural next step after this.
+
 ## Run it locally
 
 Requires [Node.js](https://nodejs.org) 18+.
@@ -113,12 +163,12 @@ this into `components/`, `pages/`, and `lib/` folders is a natural next step
 
 | Area | Current state | To make it real |
 |---|---|---|
-| Sites, rooms, equipment, work orders | In-memory `useState`, reset on reload | Move to a database + API |
-| Login | Picks a name from a hardcoded list, no password | Real auth (see below) |
-| File uploads (PDF/Word reports) | Captures the filename only | Wire to object storage (S3, etc.) |
+| Sites, rooms, equipment, work orders, users | **Live in Supabase (Postgres)** — persists across reloads and devices | Done |
+| Login | Picks a name from the live user list, no password | Real auth — see Stage 2 below |
+| File uploads (PDF/Word reports) | Captures the filename only, not the file itself | Wire to Supabase Storage |
 | QR codes | Decorative placeholder | Generate real QR codes per asset (e.g. `qrcode` npm package) pointing to a URL like `/assets/:id` |
 
-## Suggested path to a real backend
+## Suggested next steps (Stage 2)
 
 1. **Database**: Postgres works well for this shape of data (sites → rooms →
    equipment → work orders, with users and roles). Supabase or a managed

@@ -3,8 +3,10 @@ import {
   LayoutGrid, Server, Building2, ClipboardList, Users, ChevronRight, ChevronDown,
   Plus, Upload, FileText, X, Search, ShieldCheck, Wrench, Gauge, MapPin,
   Cpu, Boxes, CalendarClock, LogOut, CheckCircle2, AlertTriangle, Grid3x3,
-  Trash2, Save, Layers, Zap, Calendar, ChevronLeft, Menu
+  Trash2, Save, Layers, Zap, Calendar, ChevronLeft, Menu, Loader2
 } from "lucide-react";
+import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbAddEquipment,
+  dbUpdateEquipment, dbDeleteEquipment, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser } from "./db";
 
 /* ------------------------------------------------------------------ */
 /*  Responsive: single breakpoint, shared via context to avoid drilling */
@@ -42,121 +44,12 @@ const T = {
 const mono = { fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace" };
 
 /* ------------------------------------------------------------------ */
-/*  Seed data                                                          */
+/*  Constants                                                           */
 /* ------------------------------------------------------------------ */
 const ROLES = ["Admin", "Manager", "Technician"];
 
-const USERS = [
-  { id: "u1", name: "Nabil Khames", role: "Admin", initials: "NK" },
-  { id: "u2", name: "Mostafa Hemdan", role: "Manager", initials: "MH" },
-  { id: "u3", name: "Ehab Asmawy", role: "Technician", initials: "EA" },
-  { id: "u5", name: "Abdelrahman Brikaa", role: "Manager", initials: "AB" },
-];
-
 function initialsOf(name) {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
-}
-
-function seedSites() {
-  const mk = (id, name, loc, cap, load, rackCount, itLoad) => {
-    const rooms = [
-      { id: id + "-r1", name: "Server Hall A", grid: { w: 8, h: 5 } },
-      { id: id + "-r2", name: "Power & Gen Yard", grid: { w: 6, h: 4 } },
-    ];
-    const racks = Array.from({ length: rackCount }).map((_, i) => ({
-      id: `${id}-rk${i + 1}`,
-      name: `Rack ${String(i + 1).padStart(2, "0")}`,
-      roomId: rooms[0].id,
-    }));
-    const equipment = [
-      {
-        id: id + "-eq1", code: `${id.toUpperCase()}-R1-RK01-EQ001`, name: "cummins 1.1mva_gen_1",
-        type: "Generator", roomId: rooms[1].id, rackId: null, status: "Online",
-        installYear: 2019,
-        make: "Cummins", model: "C1100D5", serial: "CMS-1100-88214", barcode: "5901234123457",
-        category: "Equipment", account: "Facilities Power", chargeDept: "Datacenter Ops",
-        notes: "generator 1\ncummins 1.1mva\nat left",
-        location: `${name}, ${loc}`,
-        parts: [
-          { id: "p1", name: "Fuel filter", installedDate: "2025-11-02", lifetimeMonths: 6 },
-          { id: "p2", name: "Coolant pump", installedDate: "2024-05-10", lifetimeMonths: 24 },
-        ],
-        pm: [
-          { id: "pm1", date: "2026-08-05", type: "Preventive", mop: "MOP-GEN-Monthly-v3.pdf", assignedTo: "u3", status: "Open" },
-          { id: "pm2", date: "2026-08-12", type: "Preventive", mop: "MOP-GEN-Monthly-v3.pdf", assignedTo: "u3", status: "Open" },
-        ],
-      },
-      {
-        id: id + "-eq2", code: `${id.toUpperCase()}-R1-RK01-EQ002`, name: "APC Smart-UPS 40kVA",
-        type: "UPS", roomId: rooms[0].id, rackId: racks[0]?.id, status: "Online",
-        installYear: 2021,
-        make: "APC", model: "SURT40KRMXLI", serial: "APC-40K-55021", barcode: "5901234123464",
-        category: "Equipment", account: "Facilities Power", chargeDept: "Datacenter Ops",
-        notes: "Primary UPS for server hall A, rack row 1",
-        location: `${name}, ${loc}`,
-        parts: [{ id: "p3", name: "Battery bank", installedDate: "2023-01-15", lifetimeMonths: 36 }],
-        pm: [{ id: "pm3", date: "2026-08-20", type: "Preventive", mop: "MOP-UPS-Quarterly-v2.pdf", assignedTo: "u3", status: "Open" }],
-      },
-      {
-        id: id + "-eq3", code: `${id.toUpperCase()}-R1-RK02-EQ003`, name: "CRAC Unit 02",
-        type: "Cooling", roomId: rooms[0].id, rackId: racks[1]?.id, status: "Offline",
-        installYear: 2018,
-        make: "Liebert", model: "PDX-30kW", serial: "LBT-PDX-77310", barcode: "5901234123471",
-        category: "Equipment", account: "Facilities Cooling", chargeDept: "Datacenter Ops",
-        notes: "Compressor tripped on high pressure — awaiting parts",
-        location: `${name}, ${loc}`,
-        parts: [{ id: "p4", name: "Compressor", installedDate: "2022-09-01", lifetimeMonths: 60 }],
-        pm: [{ id: "pm4", date: "2026-07-28", type: "Corrective", mop: "—", assignedTo: "u3", status: "Late" }],
-      },
-    ];
-    return { id, name, loc, cap, load, itLoad, racks, rooms, equipment, placements: [] };
-  };
-  return [
-    mk("b90", "B90", "Smart Village", 1800, 750, 195, 495),
-    mk("auto", "Auto", "Alexandria", 1800, 750, 110, 460),
-  ];
-}
-
-function seedWorkOrders(sites) {
-  const wos = [];
-  let n = 90;
-  sites.forEach((s) =>
-    s.equipment.forEach((e) =>
-      e.pm.forEach((p) => {
-        n++;
-        wos.push({
-          id: "wo" + n,
-          code: n,
-          siteId: s.id,
-          equipmentId: e.id,
-          equipmentName: e.name,
-          description: `${p.type} maintenance — ${e.name}`,
-          summary: `${p.type} maintenance — ${e.name}`,
-          priority: p.status === "Late" ? "Highest" : "High",
-          type: p.type,
-          assignedTo: p.assignedTo,
-          status: p.status === "Late" ? "Late" : "Open",
-          mop: p.mop,
-          dueDate: p.date,
-          suggestedStart: p.date,
-          report: null,
-          instructions: [
-            `Inspect ${e.name} per ${p.mop}`,
-            "Check fluid levels / connections",
-            "Record meter reading before starting",
-            "Perform " + p.type.toLowerCase() + " tasks per MOP",
-            "Take a photo for each step and attach to Files",
-            "Sign off and complete work order",
-          ],
-          estLabor: "2.0h",
-          actLabor: "",
-          completedBy: "",
-          dateCompleted: "",
-        });
-      })
-    )
-  );
-  return wos;
 }
 
 /* ------------------------------------------------------------------ */
@@ -203,8 +96,8 @@ function PermGate({ allow, role, children, fallback = null }) {
 /* ------------------------------------------------------------------ */
 /*  Login / role select                                                */
 /* ------------------------------------------------------------------ */
-function Login({ onEnter }) {
-  const [uid, setUid] = useState(USERS[0].id);
+function Login({ users, onEnter }) {
+  const [uid, setUid] = useState(users[0]?.id);
   const isMobile = useWindowIsMobile();
   return (
     <div style={{
@@ -221,7 +114,7 @@ function Login({ onEnter }) {
         <div style={{ fontSize: 13, color: T.sub, marginBottom: 24 }}>Datacenter maintenance & asset control</div>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Sign in as</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
-          {USERS.map((u) => (
+          {users.map((u) => (
             <button key={u.id} onClick={() => setUid(u.id)} style={{
               display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
               borderRadius: 10, border: `1.5px solid ${uid === u.id ? T.ink : T.line}`,
@@ -236,7 +129,7 @@ function Login({ onEnter }) {
             </button>
           ))}
         </div>
-        <button onClick={() => onEnter(USERS.find((u) => u.id === uid))} style={{
+        <button onClick={() => onEnter(users.find((u) => u.id === uid))} style={{
           width: "100%", background: T.ink, color: "#fff", border: "none", borderRadius: 10,
           padding: "11px 0", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
         }}>Enter workspace</button>
@@ -1321,7 +1214,7 @@ function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, placeEquipmen
 /* ------------------------------------------------------------------ */
 /*  Users & Roles (Admin only)                                         */
 /* ------------------------------------------------------------------ */
-function UsersRoles({ users, setUsers, currentUserId }) {
+function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserId }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("Technician");
   const [editingId, setEditingId] = useState(null);
@@ -1330,15 +1223,16 @@ function UsersRoles({ users, setUsers, currentUserId }) {
   const addMember = () => {
     if (!name.trim()) return;
     const id = "u" + (Date.now());
-    setUsers((us) => [...us, { id, name: name.trim(), role, initials: initialsOf(name) }]);
+    onAddUser({ id, name: name.trim(), role, initials: initialsOf(name) });
     setName(""); setRole("Technician");
   };
   const removeMember = (id) => {
     if (id === currentUserId) return; // can't remove yourself
-    setUsers((us) => us.filter((u) => u.id !== id));
+    onDeleteUser(id);
   };
   const saveEdit = (id) => {
-    setUsers((us) => us.map((u) => u.id === id ? { ...u, name: editName.trim() || u.name, initials: initialsOf(editName.trim() || u.name) } : u));
+    const newName = editName.trim();
+    if (newName) onUpdateUser(id, { name: newName, initials: initialsOf(newName) });
     setEditingId(null);
   };
 
@@ -1387,7 +1281,7 @@ function UsersRoles({ users, setUsers, currentUserId }) {
                 </div>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <select value={u.role} onChange={(e) => setUsers((us) => us.map((x) => x.id === u.id ? { ...x, role: e.target.value } : x))} style={{ ...selStyle, flex: 1 }}>
+                <select value={u.role} onChange={(e) => onUpdateUser(u.id, { role: e.target.value })} style={{ ...selStyle, flex: 1 }}>
                   {ROLES.map((r) => <option key={r}>{r}</option>)}
                 </select>
               </div>
@@ -1414,7 +1308,7 @@ function UsersRoles({ users, setUsers, currentUserId }) {
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{u.name}{u.id === currentUserId && <span style={{ color: T.sub, fontWeight: 600 }}> (you)</span>}</span>
               )}
             </div>
-            <select value={u.role} onChange={(e) => setUsers((us) => us.map((x) => x.id === u.id ? { ...x, role: e.target.value } : x))} style={selStyle}>
+            <select value={u.role} onChange={(e) => onUpdateUser(u.id, { role: e.target.value })} style={selStyle}>
               {ROLES.map((r) => <option key={r}>{r}</option>)}
             </select>
             <span style={{ fontSize: 11.5, color: T.sub }}>
@@ -1586,51 +1480,96 @@ function MaintenanceCalendar({ workOrders, sites, users, user, onOpen }) {
 export default function App() {
   const [user, setUser] = useState(null);
   const [page, setPage] = useState("dashboard");
-  const [sites, setSites] = useState(seedSites);
-  const [workOrders, setWorkOrders] = useState(() => seedWorkOrders(seedSites()));
-  const [users, setUsers] = useState(USERS);
-  const [activeSite, setActiveSite] = useState("b90");
+  const [sites, setSites] = useState([]);
+  const [workOrders, setWorkOrders] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [activeSite, setActiveSite] = useState(null);
   const [openEqId, setOpenEqId] = useState(null);
   const [openWoId, setOpenWoId] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const isMobile = useWindowIsMobile();
 
+  const loadData = () => {
+    setLoading(true);
+    setLoadError(null);
+    fetchAll()
+      .then(({ sites, workOrders, users }) => {
+        setSites(sites);
+        setWorkOrders(workOrders);
+        setUsers(users);
+        setActiveSite((prev) => prev || sites[0]?.id || null);
+      })
+      .catch((err) => setLoadError(err.message || String(err)))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadData(); }, []);
+
   const allEquipment = sites.flatMap((s) => s.equipment);
   const openEquipment = allEquipment.find((e) => e.id === openEqId);
 
+  // Every handler below updates local state immediately (so the UI feels
+  // instant) and fires the matching Supabase write in the background. If
+  // the write fails, we log it and reload from the database so the UI
+  // never silently drifts out of sync with what's actually saved.
+  const onDbError = (err) => { console.error(err); loadData(); };
+
   const uploadEquipmentReport = (eqId, filename) => {
     setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, report: filename } : e) })));
+    dbUpdateEquipment(eqId, { report: filename }).catch(onDbError);
   };
   const uploadWOReport = (woId, filename) => {
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, report: filename, status: "In Progress" } : w));
+    dbUpdateWorkOrder(woId, { report: filename, status: "In Progress" }).catch(onDbError);
   };
-  const setWOStatus = (woId, status) => setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, status } : w));
-  const saveWorkOrder = (woId, draft) => setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...draft } : w));
-  const saveEquipmentGeneral = (eqId, draft) =>
+  const setWOStatus = (woId, status) => {
+    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, status } : w));
+    dbUpdateWorkOrder(woId, { status }).catch(onDbError);
+  };
+  const saveWorkOrder = (woId, draft) => {
+    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...draft } : w));
+    dbUpdateWorkOrder(woId, draft).catch(onDbError);
+  };
+  const saveEquipmentGeneral = (eqId, draft) => {
     setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, ...draft } : e) })));
-  const addRoom = (siteId, room) => setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, rooms: [...s.rooms, room] } : s));
-  const placeEquipment = (siteId, eqId, roomId, pos) =>
+    dbUpdateEquipment(eqId, draft).catch(onDbError);
+  };
+  const addRoom = (siteId, room) => {
+    setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, rooms: [...s.rooms, room] } : s));
+    dbAddRoom(siteId, room).catch(onDbError);
+  };
+  const placeEquipment = (siteId, eqId, roomId, pos) => {
     setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, roomId, pos } : e) } : s));
+    dbUpdateEquipment(eqId, { roomId, pos }).catch(onDbError);
+  };
 
   const addSite = (draft) => {
     const id = "s" + (Date.now());
     const rooms = [{ id: id + "-r1", name: "Server Hall A", grid: { w: 8, h: 5 } }];
     const racks = Array.from({ length: draft.rackCount || 0 }).map((_, i) => ({ id: `${id}-rk${i + 1}`, name: `Rack ${String(i + 1).padStart(2, "0")}`, roomId: rooms[0].id }));
-    setSites((prev) => [...prev, { id, name: draft.name, loc: draft.loc, cap: draft.cap, load: draft.load, itLoad: draft.itLoad || 0, racks, rooms, equipment: [] }]);
+    const site = { id, name: draft.name, loc: draft.loc, cap: draft.cap, load: draft.load, itLoad: draft.itLoad || 0, racks, rooms, equipment: [] };
+    setSites((prev) => [...prev, site]);
+    dbAddSite(site).catch(onDbError);
   };
-  const updateSite = (siteId, draft) => setSites((prev) => prev.map((s) => {
-    if (s.id !== siteId) return s;
-    const curCount = s.racks.length, wantCount = draft.rackCount || 0;
-    let racks = s.racks;
-    if (wantCount !== curCount) {
-      racks = Array.from({ length: wantCount }).map((_, i) => s.racks[i] || { id: `${s.id}-rk${i + 1}`, name: `Rack ${String(i + 1).padStart(2, "0")}`, roomId: s.rooms[0]?.id });
-    }
-    return { ...s, name: draft.name, loc: draft.loc, cap: draft.cap, load: draft.load, itLoad: draft.itLoad, racks };
-  }));
+  const updateSite = (siteId, draft) => {
+    setSites((prev) => prev.map((s) => {
+      if (s.id !== siteId) return s;
+      const curCount = s.racks.length, wantCount = draft.rackCount || 0;
+      let racks = s.racks;
+      if (wantCount !== curCount) {
+        racks = Array.from({ length: wantCount }).map((_, i) => s.racks[i] || { id: `${s.id}-rk${i + 1}`, name: `Rack ${String(i + 1).padStart(2, "0")}`, roomId: s.rooms[0]?.id });
+      }
+      return { ...s, name: draft.name, loc: draft.loc, cap: draft.cap, load: draft.load, itLoad: draft.itLoad, racks };
+    }));
+    dbUpdateSite(siteId, draft).catch(onDbError);
+  };
   const deleteSite = (siteId) => {
     setSites((prev) => prev.filter((s) => s.id !== siteId));
     setWorkOrders((prev) => prev.filter((w) => w.siteId !== siteId));
     if (activeSite === siteId) setActiveSite((prev) => sites.find((s) => s.id !== siteId)?.id || prev);
+    dbDeleteSite(siteId).catch(onDbError);
   };
 
   const addEquipment = (siteId, draft) => {
@@ -1645,13 +1584,52 @@ export default function App() {
       parts: [], pm: [], customFields: [], report: null,
     };
     setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, equipment: [...s.equipment, eq] } : s));
+    dbAddEquipment(siteId, eq).catch(onDbError);
   };
   const deleteEquipment = (siteId, eqId) => {
     setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, equipment: s.equipment.filter((e) => e.id !== eqId) } : s));
     setWorkOrders((prev) => prev.filter((w) => w.equipmentId !== eqId));
+    dbDeleteEquipment(eqId).catch(onDbError);
   };
 
-  if (!user) return <Login onEnter={setUser} />;
+  const addUser = (u) => {
+    setUsers((prev) => [...prev, u]);
+    dbAddUser(u).catch(onDbError);
+  };
+  const updateUser = (userId, fields) => {
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, ...fields } : u));
+    dbUpdateUser(userId, fields).catch(onDbError);
+  };
+  const deleteUser = (userId) => {
+    setUsers((prev) => prev.filter((u) => u.id !== userId));
+    dbDeleteUser(userId).catch(onDbError);
+  };
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "Inter,system-ui,sans-serif", color: T.sub }}>
+        <Loader2 size={22} className="spin" style={{ animation: "spin 1s linear infinite" }} />
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+        <div style={{ fontSize: 13 }}>Loading from database…</div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter,system-ui,sans-serif", padding: 20 }}>
+        <div style={{ maxWidth: 420, textAlign: "center", color: T.sub }}>
+          <AlertTriangle size={26} color={T.red} style={{ marginBottom: 10 }} />
+          <div style={{ fontWeight: 800, color: T.ink, marginBottom: 6 }}>Couldn't reach the database</div>
+          <div style={{ fontSize: 13, marginBottom: 14 }}>{loadError}</div>
+          <div style={{ fontSize: 12, marginBottom: 14 }}>Check that <code>.env</code> has the correct <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, and that the schema has been run in Supabase.</div>
+          <button onClick={loadData} style={smallBtn}>Retry</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <Login users={users} onEnter={setUser} />;
 
   const PAGE_TITLES = { dashboard: "Sites Dashboard", calendar: "Calendar", assets: "Assets", workorders: "Work Orders", roomdesigner: "Room Designer", users: "Users & Roles" };
 
@@ -1681,7 +1659,7 @@ export default function App() {
             <RoomDesigner sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} placeEquipment={placeEquipment} />
           </PermGate>}
           {page === "users" && <PermGate allow={["Admin"]} role={user.role} fallback={<AccessDenied />}>
-            <UsersRoles users={users} setUsers={setUsers} currentUserId={user.id} />
+            <UsersRoles users={users} onAddUser={addUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} currentUserId={user.id} />
           </PermGate>}
         </div>
         <EquipmentModal equipment={openEquipment} users={users} onClose={() => setOpenEqId(null)} onUploadReport={uploadEquipmentReport} onSaveGeneral={saveEquipmentGeneral} role={user.role} />
