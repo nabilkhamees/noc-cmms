@@ -7,6 +7,7 @@ create table users (
   name text not null,
   role text not null check (role in ('Admin', 'Manager', 'Technician')),
   initials text not null,
+  email text unique,
   created_at timestamptz default now()
 );
 
@@ -116,11 +117,9 @@ create table work_orders (
 
 -- ── Row Level Security ─────────────────────────────────────────────
 -- Turned on for every table so the public anon key (embedded in the
--- built frontend) can only do what these policies allow. For this demo
--- we allow full read/write to anyone holding the anon key — good
--- enough for an internal demo behind a private link, NOT for a public
--- production app. Tightening this (e.g. requiring real login) is part
--- of Stage 2.
+-- built frontend) can only do what these policies allow. Every read and
+-- write requires an authenticated Supabase Auth session — see
+-- src/App.jsx's real login and .env setup in README.md.
 
 alter table users enable row level security;
 alter table sites enable row level security;
@@ -131,21 +130,29 @@ alter table parts enable row level security;
 alter table pm_schedule enable row level security;
 alter table work_orders enable row level security;
 
-create policy "public read/write - users" on users for all using (true) with check (true);
-create policy "public read/write - sites" on sites for all using (true) with check (true);
-create policy "public read/write - rooms" on rooms for all using (true) with check (true);
-create policy "public read/write - racks" on racks for all using (true) with check (true);
-create policy "public read/write - equipment" on equipment for all using (true) with check (true);
-create policy "public read/write - parts" on parts for all using (true) with check (true);
-create policy "public read/write - pm_schedule" on pm_schedule for all using (true) with check (true);
-create policy "public read/write - work_orders" on work_orders for all using (true) with check (true);
+create policy "authenticated read/write - users" on users for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - sites" on sites for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - rooms" on rooms for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - racks" on racks for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - equipment" on equipment for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - parts" on parts for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - pm_schedule" on pm_schedule for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+create policy "authenticated read/write - work_orders" on work_orders for all
+  using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
 -- ── Seed data — mirrors the current in-app demo data ───────────────
-insert into users (id, name, role, initials) values
-  ('u1', 'Nabil Khames', 'Admin', 'NK'),
-  ('u2', 'Mostafa Hemdan', 'Manager', 'MH'),
-  ('u3', 'Ehab Asmawy', 'Technician', 'EA'),
-  ('u5', 'Abdelrahman Brikaa', 'Manager', 'AB');
+insert into users (id, name, role, initials, email) values
+  ('u1', 'Nabil Khames', 'Admin', 'NK', 'nabilkhamees0@gmail.com'),
+  ('u2', 'Mostafa Hemdan', 'Manager', 'MH', null),
+  ('u3', 'Ehab Asmawy', 'Technician', 'EA', null),
+  ('u5', 'Abdelrahman Brikaa', 'Manager', 'AB', null);
 
 insert into sites (id, name, loc, cap, load, it_load) values
   ('b90', 'B90', 'Smart Village', 1800, 750, 495),

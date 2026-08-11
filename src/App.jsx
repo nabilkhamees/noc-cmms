@@ -3,10 +3,12 @@ import {
   LayoutGrid, Server, Building2, ClipboardList, Users, ChevronRight, ChevronDown,
   Plus, Upload, FileText, X, Search, ShieldCheck, Wrench, Gauge, MapPin,
   Cpu, Boxes, CalendarClock, LogOut, CheckCircle2, AlertTriangle, Grid3x3,
-  Trash2, Save, Layers, Zap, Calendar, ChevronLeft, Menu, Loader2
+  Trash2, Save, Layers, Zap, Calendar, ChevronLeft, Menu, Loader2, MoreVertical
 } from "lucide-react";
-import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbAddEquipment,
-  dbUpdateEquipment, dbDeleteEquipment, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser } from "./db";
+import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbDeleteRoom, dbAddEquipment,
+  dbUpdateEquipment, dbDeleteEquipment, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser,
+  dbAddEquipmentType } from "./db";
+import { supabase } from "./supabaseClient";
 
 /* ------------------------------------------------------------------ */
 /*  Responsive: single breakpoint, shared via context to avoid drilling */
@@ -47,6 +49,7 @@ const mono = { fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace
 /*  Constants                                                           */
 /* ------------------------------------------------------------------ */
 const ROLES = ["Admin", "Manager", "Technician"];
+const BUILTIN_EQUIPMENT_TYPES = ["Generator", "UPS", "Cooling", "Rack PDU", "Switch", "Panel Board", "Rectifier", "Equipment"];
 
 function initialsOf(name) {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
@@ -96,15 +99,23 @@ function PermGate({ allow, role, children, fallback = null }) {
 /* ------------------------------------------------------------------ */
 /*  Login / role select                                                */
 /* ------------------------------------------------------------------ */
-function Login({ users, onEnter }) {
-  const [uid, setUid] = useState(users[0]?.id);
+function Login({ onSignIn, error, loading }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const isMobile = useWindowIsMobile();
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (!email.trim() || !password) return;
+    onSignIn(email.trim(), password);
+  };
+
   return (
     <div style={{
       minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center",
       justifyContent: "center", fontFamily: "Inter,system-ui,sans-serif", padding: 16,
     }}>
-      <div style={{ width: isMobile ? "100%" : 380, maxWidth: 380, border: `1px solid ${T.line}`, borderRadius: 18, padding: isMobile ? 22 : 32 }}>
+      <form onSubmit={submit} style={{ width: isMobile ? "100%" : 380, maxWidth: 380, border: `1px solid ${T.line}`, borderRadius: 18, padding: isMobile ? 22 : 32 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Server size={17} color="#fff" />
@@ -112,30 +123,49 @@ function Login({ users, onEnter }) {
           <div style={{ fontWeight: 800, fontSize: 18, color: T.ink }}>NOC/CMMS</div>
         </div>
         <div style={{ fontSize: 13, color: T.sub, marginBottom: 24 }}>Datacenter maintenance & asset control</div>
-        <div style={{ fontSize: 12, fontWeight: 700, color: T.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>Sign in as</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 22 }}>
-          {users.map((u) => (
-            <button key={u.id} onClick={() => setUid(u.id)} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
-              borderRadius: 10, border: `1.5px solid ${uid === u.id ? T.ink : T.line}`,
-              background: uid === u.id ? T.panel : "#fff", cursor: "pointer", textAlign: "left",
-            }}>
-              <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.teal, color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{u.initials}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{u.name}</div>
-                <div style={{ fontSize: 11.5, color: T.sub }}>{u.role}</div>
-              </div>
-              {uid === u.id && <CheckCircle2 size={16} color={T.teal} />}
-            </button>
-          ))}
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={labelStyle}>Email</div>
+          <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com" style={{ ...selStyle, width: "100%" }} />
         </div>
-        <button onClick={() => onEnter(users.find((u) => u.id === uid))} style={{
+        <div style={{ marginBottom: 16 }}>
+          <div style={labelStyle}>Password</div>
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••" style={{ ...selStyle, width: "100%" }} />
+        </div>
+
+        {error && (
+          <div style={{ background: "#FBE7E7", color: "#A8322F", fontSize: 12.5, borderRadius: 9, padding: "9px 11px", marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+
+        <button type="submit" disabled={loading} style={{
           width: "100%", background: T.ink, color: "#fff", border: "none", borderRadius: 10,
-          padding: "11px 0", fontWeight: 700, fontSize: 13.5, cursor: "pointer",
-        }}>Enter workspace</button>
+          padding: "11px 0", fontWeight: 700, fontSize: 13.5, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1,
+        }}>{loading ? "Signing in…" : "Sign in"}</button>
+
         <div style={{ marginTop: 14, fontSize: 11.5, color: T.sub, lineHeight: 1.5 }}>
-          Role-based access: Technicians see only assigned work orders; Managers see sites & assets; Admins manage users and roles.
+          Don't have an account yet? Ask an Admin to create your login and link it to a profile in Users & Roles.
         </div>
+      </form>
+    </div>
+  );
+}
+
+function NoProfileScreen({ email, onLogout }) {
+  const isMobile = useWindowIsMobile();
+  return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter,system-ui,sans-serif", padding: 16 }}>
+      <div style={{ width: isMobile ? "100%" : 420, maxWidth: 420, textAlign: "center" }}>
+        <AlertTriangle size={26} color={T.amber} style={{ marginBottom: 10 }} />
+        <div style={{ fontWeight: 800, color: T.ink, marginBottom: 6, fontSize: 16 }}>You're signed in, but no profile is linked</div>
+        <div style={{ fontSize: 13, color: T.sub, marginBottom: 16 }}>
+          Signed in as <strong style={{ color: T.ink }}>{email}</strong>, but no user profile in Users & Roles has this
+          email attached yet. Ask an Admin to add or edit a profile with this exact email address.
+        </div>
+        <button onClick={onLogout} style={smallBtn}>Sign out</button>
       </div>
     </div>
   );
@@ -144,7 +174,7 @@ function Login({ users, onEnter }) {
 /* ------------------------------------------------------------------ */
 /*  Sidebar                                                             */
 /* ------------------------------------------------------------------ */
-function Sidebar({ page, setPage, user, onLogout, mobileOpen, onCloseMobile }) {
+function Sidebar({ page, setPage, user, onLogout, mobileOpen, onCloseMobile, collapsed, onToggleCollapse }) {
   const isMobile = useIsMobile();
   const items = [
     { id: "dashboard", label: "Sites Dashboard", icon: LayoutGrid, allow: ROLES },
@@ -154,46 +184,57 @@ function Sidebar({ page, setPage, user, onLogout, mobileOpen, onCloseMobile }) {
     { id: "roomdesigner", label: "Room Designer", icon: Grid3x3, allow: ["Admin", "Manager"] },
     { id: "users", label: "Users & Roles", icon: Users, allow: ["Admin"] },
   ];
+  const mini = !isMobile && collapsed;
 
   const panel = (
     <div style={{
-      width: isMobile ? 250 : 232, background: T.bg, borderRight: `1px solid ${T.line}`,
+      width: isMobile ? 250 : (mini ? 64 : 232), background: T.bg, borderRight: `1px solid ${T.line}`,
       minHeight: "100vh", height: isMobile ? "100vh" : undefined,
-      display: "flex", flexDirection: "column", padding: "18px 12px", flexShrink: 0,
+      display: "flex", flexDirection: "column", padding: mini ? "18px 8px" : "18px 12px", flexShrink: 0,
       position: isMobile ? "fixed" : "static", top: 0, left: 0, zIndex: 70,
       transform: isMobile ? `translateX(${mobileOpen ? "0" : "-100%"})` : "none",
-      transition: "transform 0.2s ease",
+      transition: "transform 0.2s ease, width 0.15s ease",
     }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 8px", marginBottom: 22 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-          <div style={{ width: 30, height: 30, borderRadius: 8, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Server size={15} color="#fff" />
+      <div style={{ display: "flex", alignItems: "center", justifyContent: mini ? "center" : "space-between", padding: mini ? 0 : "0 8px", marginBottom: 22 }}>
+        {!mini && (
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: T.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Server size={15} color="#fff" />
+            </div>
+            <div style={{ fontWeight: 800, fontSize: 15.5, color: T.ink }}>NOC/CMMS</div>
           </div>
-          <div style={{ fontWeight: 800, fontSize: 15.5, color: T.ink }}>NOC/CMMS</div>
-        </div>
-        {isMobile && <button onClick={onCloseMobile} style={iconBtn}><X size={16} /></button>}
+        )}
+        {isMobile ? (
+          <button onClick={onCloseMobile} style={iconBtn}><X size={16} /></button>
+        ) : (
+          <button onClick={onToggleCollapse} title={mini ? "Expand menu" : "Minimize menu"} style={iconBtn}>
+            {mini ? <MoreVertical size={16} /> : <ChevronLeft size={16} />}
+          </button>
+        )}
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
         {items.map((it) => (
           <PermGate key={it.id} allow={it.allow} role={user.role}>
-            <button onClick={() => { setPage(it.id); if (isMobile) onCloseMobile(); }} style={{
-              display: "flex", alignItems: "center", gap: 10, padding: "10px 10px", borderRadius: 9,
+            <button onClick={() => { setPage(it.id); if (isMobile) onCloseMobile(); }} title={mini ? it.label : undefined} style={{
+              display: "flex", alignItems: "center", gap: 10, padding: mini ? "10px 0" : "10px 10px", borderRadius: 9,
               border: "none", background: page === it.id ? T.panel : "transparent",
               color: page === it.id ? T.ink : T.sub, fontWeight: page === it.id ? 700 : 600,
-              fontSize: 13.6, cursor: "pointer", textAlign: "left",
+              fontSize: 13.6, cursor: "pointer", textAlign: "left", justifyContent: mini ? "center" : "flex-start",
             }}>
-              <it.icon size={16} />{it.label}
+              <it.icon size={16} />{!mini && it.label}
             </button>
           </PermGate>
         ))}
       </div>
       <div style={{ marginTop: "auto", borderTop: `1px solid ${T.line}`, paddingTop: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "6px 8px" }}>
-          <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.teal, color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{user.initials}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
-            <div style={{ fontSize: 11, color: T.sub }}>{user.role}</div>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, padding: mini ? "6px 0" : "6px 8px", justifyContent: mini ? "center" : "flex-start" }}>
+          <div title={mini ? `${user.name} · ${user.role}` : undefined} style={{ width: 28, height: 28, borderRadius: "50%", background: T.teal, color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{user.initials}</div>
+          {!mini && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.name}</div>
+              <div style={{ fontSize: 11, color: T.sub }}>{user.role}</div>
+            </div>
+          )}
           <button onClick={onLogout} title="Log off" style={{ border: "none", background: "transparent", cursor: "pointer", color: T.sub }}>
             <LogOut size={15} />
           </button>
@@ -353,11 +394,13 @@ function PageHeader({ title, sub, right }) {
 /* ------------------------------------------------------------------ */
 /*  Asset Hierarchy (the "serial code graph")                          */
 /* ------------------------------------------------------------------ */
-function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, onAddEquipment, onDeleteEquipment, onAddRoom }) {
+function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, onAddEquipment, onDeleteEquipment, onAddRoom, onDeleteRoom, equipmentTypes, onAddEquipmentType }) {
   const [open, setOpen] = useState({});
   const [view, setView] = useState("list"); // "list" | "tree"
   const [q, setQ] = useState("");
   const [step, setStep] = useState(null); // null | "room" | "equipment"
+  const [addingType, setAddingType] = useState(false);
+  const [newTypeName, setNewTypeName] = useState("");
   const toggle = (k) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const site = sites.find((s) => s.id === activeSite) || sites[0];
   const canEdit = role === "Admin" || role === "Manager";
@@ -410,8 +453,8 @@ function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, on
               {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
             <div style={{ display: "flex", border: `1px solid ${T.line}`, borderRadius: 9, overflow: "hidden" }}>
-              <button onClick={() => setView("list")} style={{ border: "none", padding: "7px 10px", background: view === "list" ? T.ink : "#fff", color: view === "list" ? "#fff" : T.sub, cursor: "pointer" }}><ClipboardList size={13} /></button>
-              <button onClick={() => setView("tree")} style={{ border: "none", padding: "7px 10px", background: view === "tree" ? T.ink : "#fff", color: view === "tree" ? "#fff" : T.sub, cursor: "pointer" }}><Layers size={13} /></button>
+              <button onClick={() => setView("list")} style={{ display: "flex", alignItems: "center", gap: 5, border: "none", padding: "7px 12px", background: view === "list" ? T.ink : "#fff", color: view === "list" ? "#fff" : T.sub, cursor: "pointer", fontSize: 12, fontWeight: 700 }}><ClipboardList size={13} />List</button>
+              <button onClick={() => setView("tree")} style={{ display: "flex", alignItems: "center", gap: 5, border: "none", padding: "7px 12px", background: view === "tree" ? T.ink : "#fff", color: view === "tree" ? "#fff" : T.sub, cursor: "pointer", fontSize: 12, fontWeight: 700 }}><Layers size={13} />Rooms</button>
             </div>
             {canEdit && <button onClick={startAdd} style={smallBtn}><Plus size={12} style={{ marginRight: 4 }} />Add asset</button>}
           </div>
@@ -444,9 +487,33 @@ function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, on
                 <FieldRow label="Name" value={draft.name} onChange={(v) => setDraft((d) => ({ ...d, name: v }))} />
                 <div>
                   <div style={labelStyle}>Type</div>
-                  <select value={draft.type} onChange={(e) => setDraft((d) => ({ ...d, type: e.target.value }))} style={{ ...selStyle, width: "100%" }}>
-                    {["Generator", "UPS", "Cooling", "Rack PDU", "Switch", "Equipment"].map((t) => <option key={t}>{t}</option>)}
-                  </select>
+                  {addingType ? (
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <input autoFocus value={newTypeName} onChange={(e) => setNewTypeName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            if (newTypeName.trim()) { onAddEquipmentType(newTypeName.trim()); setDraft((d) => ({ ...d, type: newTypeName.trim() })); }
+                            setAddingType(false); setNewTypeName("");
+                          }
+                          if (e.key === "Escape") { setAddingType(false); setNewTypeName(""); }
+                        }}
+                        placeholder="e.g. Battery Bank" style={{ ...selStyle, width: "100%" }} />
+                      <button type="button" onClick={() => {
+                        if (newTypeName.trim()) { onAddEquipmentType(newTypeName.trim()); setDraft((d) => ({ ...d, type: newTypeName.trim() })); }
+                        setAddingType(false); setNewTypeName("");
+                      }} style={iconBtn} title="Save classification"><Save size={14} /></button>
+                      <button type="button" onClick={() => { setAddingType(false); setNewTypeName(""); }} style={iconBtn} title="Cancel"><X size={14} /></button>
+                    </div>
+                  ) : (
+                    <select value={draft.type} onChange={(e) => {
+                      if (e.target.value === "__custom__") { setAddingType(true); return; }
+                      setDraft((d) => ({ ...d, type: e.target.value }));
+                    }} style={{ ...selStyle, width: "100%" }}>
+                      {equipmentTypes.map((t) => <option key={t}>{t}</option>)}
+                      <option value="__custom__">+ Add custom classification…</option>
+                    </select>
+                  )}
                 </div>
                 <div>
                   <div style={labelStyle}>Room</div>
@@ -557,7 +624,8 @@ function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, on
             const isOpen = q.trim() ? true : open[rk];
             return (
               <div key={room.id} style={{ marginLeft: 22, borderLeft: `2px solid ${T.line}`, paddingLeft: 18 }}>
-                <TreeNode depth={1} icon={LayoutGrid} label={room.name} code={room.id.toUpperCase()} onClick={() => toggle(rk)} openState={isOpen} sub={`${roomRacks.length} racks · ${roomEqAll.length} units`} />
+                <TreeNode depth={1} icon={LayoutGrid} label={room.name} code={room.id.toUpperCase()} onClick={() => toggle(rk)} openState={isOpen} sub={`${roomRacks.length} racks · ${roomEqAll.length} units`}
+                  trailing={canEdit && <button onClick={() => onDeleteRoom(site.id, room.id)} style={iconBtn} title="Delete room"><Trash2 size={13} color={T.red} /></button>} />
                 {isOpen && (
                   <div style={{ marginLeft: 22, borderLeft: `2px solid ${T.line}`, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8, padding: "8px 0 8px 18px" }}>
                     {roomEq.length === 0 && <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic" }}>No equipment placed yet</div>}
@@ -607,18 +675,21 @@ function StepDot({ n, active, done, label }) {
   );
 }
 
-function TreeNode({ depth, icon: Icon, label, code, sub, onClick, openState, last }) {
+function TreeNode({ depth, icon: Icon, label, code, sub, onClick, openState, last, trailing }) {
   return (
-    <button onClick={onClick} style={{
-      display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent",
-      cursor: "pointer", padding: "8px 4px", width: "100%", textAlign: "left",
-    }}>
-      {openState ? <ChevronDown size={14} color={T.sub} /> : <ChevronRight size={14} color={T.sub} />}
-      <Icon size={depth === 0 ? 17 : 15} color={depth === 0 ? T.ink : T.teal} />
-      <span style={{ fontWeight: depth === 0 ? 800 : 700, fontSize: depth === 0 ? 15.5 : 13.5, color: T.ink }}>{label}</span>
-      <span style={{ fontSize: 11, color: T.sub, ...mono }}>{code}</span>
-      {sub && <span style={{ fontSize: 11.5, color: T.sub, marginLeft: "auto" }}>{sub}</span>}
-    </button>
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      <button onClick={onClick} style={{
+        display: "flex", alignItems: "center", gap: 8, border: "none", background: "transparent",
+        cursor: "pointer", padding: "8px 4px", flex: 1, minWidth: 0, textAlign: "left",
+      }}>
+        {openState ? <ChevronDown size={14} color={T.sub} /> : <ChevronRight size={14} color={T.sub} />}
+        <Icon size={depth === 0 ? 17 : 15} color={depth === 0 ? T.ink : T.teal} />
+        <span style={{ fontWeight: depth === 0 ? 800 : 700, fontSize: depth === 0 ? 15.5 : 13.5, color: T.ink }}>{label}</span>
+        <span style={{ fontSize: 11, color: T.sub, ...mono }}>{code}</span>
+        {sub && <span style={{ fontSize: 11.5, color: T.sub, marginLeft: "auto" }}>{sub}</span>}
+      </button>
+      {trailing}
+    </div>
   );
 }
 
@@ -1115,7 +1186,7 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
 /* ------------------------------------------------------------------ */
 /*  Room Designer — add a room, then place equipment on a grid          */
 /* ------------------------------------------------------------------ */
-function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, placeEquipment }) {
+function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, onDeleteRoom, placeEquipment }) {
   const site = sites.find((s) => s.id === activeSite) || sites[0];
   const [roomId, setRoomId] = useState(site.rooms[0]?.id);
   const [newRoomName, setNewRoomName] = useState("");
@@ -1153,12 +1224,19 @@ function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, placeEquipmen
             <SectionLabel icon={LayoutGrid}>Rooms</SectionLabel>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {site.rooms.map((r) => (
-                <button key={r.id} onClick={() => setRoomId(r.id)} style={{
-                  textAlign: "left", border: "none", borderRadius: 8, padding: "8px 10px",
-                  background: r.id === roomId ? T.panel : "transparent", cursor: "pointer",
-                  fontWeight: r.id === roomId ? 700 : 600, fontSize: 12.5, color: T.ink,
-                }}>{r.name}</button>
+                <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                  <button onClick={() => setRoomId(r.id)} style={{
+                    textAlign: "left", border: "none", borderRadius: 8, padding: "8px 10px",
+                    background: r.id === roomId ? T.panel : "transparent", cursor: "pointer",
+                    fontWeight: r.id === roomId ? 700 : 600, fontSize: 12.5, color: T.ink, flex: 1, minWidth: 0,
+                  }}>{r.name}</button>
+                  <button onClick={() => {
+                    onDeleteRoom(site.id, r.id);
+                    if (roomId === r.id) setRoomId(site.rooms.find((x) => x.id !== r.id)?.id || null);
+                  }} style={iconBtn} title="Delete room"><Trash2 size={13} color={T.red} /></button>
+                </div>
               ))}
+              {site.rooms.length === 0 && <div style={{ fontSize: 11.5, color: T.sub, fontStyle: "italic" }}>No rooms yet — add one above</div>}
             </div>
           </div>
 
@@ -1216,23 +1294,29 @@ function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, placeEquipmen
 /* ------------------------------------------------------------------ */
 function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserId }) {
   const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [role, setRole] = useState("Technician");
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
 
   const addMember = () => {
     if (!name.trim()) return;
     const id = "u" + (Date.now());
-    onAddUser({ id, name: name.trim(), role, initials: initialsOf(name) });
-    setName(""); setRole("Technician");
+    onAddUser({ id, name: name.trim(), role, initials: initialsOf(name), email: email.trim() || null });
+    setName(""); setEmail(""); setRole("Technician");
   };
   const removeMember = (id) => {
     if (id === currentUserId) return; // can't remove yourself
     onDeleteUser(id);
   };
+  const startEdit = (u) => { setEditingId(u.id); setEditName(u.name); setEditEmail(u.email || ""); };
   const saveEdit = (id) => {
     const newName = editName.trim();
-    if (newName) onUpdateUser(id, { name: newName, initials: initialsOf(newName) });
+    const payload = {};
+    if (newName) { payload.name = newName; payload.initials = initialsOf(newName); }
+    payload.email = editEmail.trim() || null;
+    onUpdateUser(id, payload);
     setEditingId(null);
   };
 
@@ -1240,12 +1324,16 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
 
   return (
     <div>
-      <PageHeader title="Users & Roles" sub="Role-based access control for the workspace" />
+      <PageHeader title="Users & Roles" sub="Role-based access control — email links a profile to a real login" />
 
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, padding: 14, marginBottom: 16, display: "flex", gap: 8, alignItems: isMobile ? "stretch" : "flex-end", flexWrap: "wrap", flexDirection: isMobile ? "column" : "row" }}>
-        <div style={{ flex: 1, minWidth: isMobile ? "100%" : 160 }}>
+        <div style={{ flex: 1, minWidth: isMobile ? "100%" : 140 }}>
           <div style={labelStyle}>New member name</div>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Omar Saeed" style={{ ...selStyle, width: "100%" }} />
+        </div>
+        <div style={{ flex: 1, minWidth: isMobile ? "100%" : 160 }}>
+          <div style={labelStyle}>Email (must match their login)</div>
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="omar@company.com" style={{ ...selStyle, width: "100%" }} />
         </div>
         <div style={{ width: isMobile ? "100%" : "auto" }}>
           <div style={labelStyle}>Role</div>
@@ -1256,6 +1344,12 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
         <button onClick={addMember} style={{ ...smallBtn, width: isMobile ? "100%" : "auto", justifyContent: "center" }}><Plus size={12} style={{ marginRight: 4 }} />Add member</button>
       </div>
 
+      <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 14, lineHeight: 1.5 }}>
+        Adding a profile here doesn't create their login — create their actual sign-in separately in
+        Supabase (Authentication → Users → Add user) with this exact email, or have them sign themselves
+        up if you've enabled that. The email here just links the two together.
+      </div>
+
       {isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {users.map((u) => (
@@ -1263,17 +1357,24 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
               <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
                 <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.teal, color: "#fff", fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{u.initials}</div>
                 {editingId === u.id ? (
-                  <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && saveEdit(u.id)}
-                    style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5, flex: 1 }} />
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)}
+                      style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5 }} placeholder="Name" />
+                    <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && saveEdit(u.id)}
+                      style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5 }} placeholder="Email" />
+                  </div>
                 ) : (
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, flex: 1 }}>{u.name}{u.id === currentUserId && <span style={{ color: T.sub, fontWeight: 600 }}> (you)</span>}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{u.name}{u.id === currentUserId && <span style={{ color: T.sub, fontWeight: 600 }}> (you)</span>}</div>
+                    <div style={{ fontSize: 11, color: u.email ? T.sub : T.amber }}>{u.email || "No email linked"}</div>
+                  </div>
                 )}
                 <div style={{ display: "flex", gap: 4 }}>
                   {editingId === u.id ? (
                     <button onClick={() => saveEdit(u.id)} style={iconBtn}><Save size={14} /></button>
                   ) : (
-                    <button onClick={() => { setEditingId(u.id); setEditName(u.name); }} style={iconBtn} title="Rename"><FileText size={14} /></button>
+                    <button onClick={() => startEdit(u)} style={iconBtn} title="Edit"><FileText size={14} /></button>
                   )}
                   <button onClick={() => removeMember(u.id)} disabled={u.id === currentUserId} style={{ ...iconBtn, opacity: u.id === currentUserId ? 0.35 : 1, cursor: u.id === currentUserId ? "not-allowed" : "pointer" }} title="Remove">
                     <Trash2 size={14} color={T.red} />
@@ -1293,21 +1394,27 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
         </div>
       ) : (
       <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.4fr 70px", padding: "11px 16px", background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase" }}>
-          <div>User</div><div>Role</div><div>Access</div><div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1.6fr 1fr 1.2fr 70px", padding: "11px 16px", background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase" }}>
+          <div>User</div><div>Email</div><div>Role</div><div>Access</div><div></div>
         </div>
         {users.map((u) => (
-          <div key={u.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.4fr 70px", alignItems: "center", padding: "10px 16px", borderTop: `1px solid ${T.line}` }}>
+          <div key={u.id} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.6fr 1fr 1.2fr 70px", alignItems: "center", padding: "10px 16px", borderTop: `1px solid ${T.line}` }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
               <div style={{ width: 26, height: 26, borderRadius: "50%", background: T.teal, color: "#fff", fontSize: 10.5, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{u.initials}</div>
               {editingId === u.id ? (
                 <input autoFocus value={editName} onChange={(e) => setEditName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && saveEdit(u.id)}
-                  style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5 }} />
+                  style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5, width: "100%" }} placeholder="Name" />
               ) : (
                 <span style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{u.name}{u.id === currentUserId && <span style={{ color: T.sub, fontWeight: 600 }}> (you)</span>}</span>
               )}
             </div>
+            {editingId === u.id ? (
+              <input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && saveEdit(u.id)}
+                style={{ ...selStyle, padding: "5px 8px", fontSize: 12.5, width: "100%" }} placeholder="Email" />
+            ) : (
+              <span style={{ fontSize: 12, color: u.email ? T.sub : T.amber }}>{u.email || "No email linked"}</span>
+            )}
             <select value={u.role} onChange={(e) => onUpdateUser(u.id, { role: e.target.value })} style={selStyle}>
               {ROLES.map((r) => <option key={r}>{r}</option>)}
             </select>
@@ -1318,7 +1425,7 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
               {editingId === u.id ? (
                 <button onClick={() => saveEdit(u.id)} style={iconBtn}><Save size={14} /></button>
               ) : (
-                <button onClick={() => { setEditingId(u.id); setEditName(u.name); }} style={iconBtn} title="Rename"><FileText size={14} /></button>
+                <button onClick={() => startEdit(u)} style={iconBtn} title="Edit"><FileText size={14} /></button>
               )}
               <button onClick={() => removeMember(u.id)} disabled={u.id === currentUserId} style={{ ...iconBtn, opacity: u.id === currentUserId ? 0.35 : 1, cursor: u.id === currentUserId ? "not-allowed" : "pointer" }} title="Remove">
                 <Trash2 size={14} color={T.red} />
@@ -1478,34 +1585,65 @@ function MaintenanceCalendar({ workOrders, sites, users, user, onOpen }) {
 /*  App shell                                                           */
 /* ------------------------------------------------------------------ */
 export default function App() {
-  const [user, setUser] = useState(null);
+  const [session, setSession] = useState(undefined); // undefined = not checked yet, null = signed out
+  const [authError, setAuthError] = useState(null);
+  const [authLoading, setAuthLoading] = useState(false);
   const [page, setPage] = useState("dashboard");
   const [sites, setSites] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [customTypes, setCustomTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [activeSite, setActiveSite] = useState(null);
   const [openEqId, setOpenEqId] = useState(null);
   const [openWoId, setOpenWoId] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isMobile = useWindowIsMobile();
+
+  // Track the Supabase Auth session — checks for an existing one on load
+  // (so refreshing the page keeps you signed in), and listens for
+  // sign-in/sign-out events from here on.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? null));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const signIn = (email, password) => {
+    setAuthError(null);
+    setAuthLoading(true);
+    supabase.auth.signInWithPassword({ email, password })
+      .then(({ error }) => { if (error) setAuthError(error.message); })
+      .finally(() => setAuthLoading(false));
+  };
+  const signOut = () => supabase.auth.signOut();
 
   const loadData = () => {
     setLoading(true);
     setLoadError(null);
     fetchAll()
-      .then(({ sites, workOrders, users }) => {
+      .then(({ sites, workOrders, users, customTypes }) => {
         setSites(sites);
         setWorkOrders(workOrders);
         setUsers(users);
+        setCustomTypes(customTypes || []);
         setActiveSite((prev) => prev || sites[0]?.id || null);
       })
       .catch((err) => setLoadError(err.message || String(err)))
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadData(); }, []);
+  // Once we have a signed-in session, load the app's data. On sign-out,
+  // clear everything back to empty so a different account can't briefly
+  // see the previous user's data.
+  useEffect(() => {
+    if (session) loadData();
+    else { setSites([]); setWorkOrders([]); setUsers([]); setActiveSite(null); }
+  }, [session]);
 
   const allEquipment = sites.flatMap((s) => s.equipment);
   const openEquipment = allEquipment.find((e) => e.id === openEqId);
@@ -1539,6 +1677,18 @@ export default function App() {
   const addRoom = (siteId, room) => {
     setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, rooms: [...s.rooms, room] } : s));
     dbAddRoom(siteId, room).catch(onDbError);
+  };
+  const deleteRoom = (siteId, roomId) => {
+    const site = sites.find((s) => s.id === siteId);
+    const occupied = site?.equipment.some((e) => e.roomId === roomId);
+    if (occupied) {
+      alert("This room still has equipment in it. Move or delete that equipment first, then remove the room.");
+      return;
+    }
+    setSites((prev) => prev.map((s) => s.id === siteId
+      ? { ...s, rooms: s.rooms.filter((r) => r.id !== roomId), racks: s.racks.filter((r) => r.roomId !== roomId) }
+      : s));
+    dbDeleteRoom(roomId).catch(onDbError);
   };
   const placeEquipment = (siteId, eqId, roomId, pos) => {
     setSites((prev) => prev.map((s) => s.id === siteId ? { ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, roomId, pos } : e) } : s));
@@ -1605,6 +1755,28 @@ export default function App() {
     dbDeleteUser(userId).catch(onDbError);
   };
 
+  const equipmentTypes = Array.from(new Set([...BUILTIN_EQUIPMENT_TYPES, ...customTypes]));
+  const addEquipmentType = (name) => {
+    const trimmed = name.trim();
+    if (!trimmed || equipmentTypes.some((t) => t.toLowerCase() === trimmed.toLowerCase())) return;
+    setCustomTypes((prev) => [...prev, trimmed]);
+    dbAddEquipmentType(trimmed).catch(onDbError);
+  };
+
+  // session === undefined → still checking for an existing session (brief,
+  // happens once on first load)
+  if (session === undefined) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Inter,system-ui,sans-serif" }}>
+        <Loader2 size={22} style={{ animation: "spin 1s linear infinite" }} />
+        <style>{"@keyframes spin { to { transform: rotate(360deg); } }"}</style>
+      </div>
+    );
+  }
+
+  // session === null → not signed in
+  if (!session) return <Login onSignIn={signIn} error={authError} loading={authLoading} />;
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "Inter,system-ui,sans-serif", color: T.sub }}>
@@ -1622,21 +1794,27 @@ export default function App() {
           <AlertTriangle size={26} color={T.red} style={{ marginBottom: 10 }} />
           <div style={{ fontWeight: 800, color: T.ink, marginBottom: 6 }}>Couldn't reach the database</div>
           <div style={{ fontSize: 13, marginBottom: 14 }}>{loadError}</div>
-          <div style={{ fontSize: 12, marginBottom: 14 }}>Check that <code>.env</code> has the correct <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, and that the schema has been run in Supabase.</div>
-          <button onClick={loadData} style={smallBtn}>Retry</button>
+          <div style={{ fontSize: 12, marginBottom: 14 }}>Check that <code>.env</code> has the correct <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code>, and that the schema/migration have been run in Supabase.</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <button onClick={loadData} style={smallBtn}>Retry</button>
+            <button onClick={signOut} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Sign out</button>
+          </div>
         </div>
       </div>
     );
   }
 
-  if (!user) return <Login users={users} onEnter={setUser} />;
+  // Signed in, but no profile row in the `users` table matches this
+  // account's email — nothing to show them yet.
+  const user = users.find((u) => u.email && u.email.toLowerCase() === session.user.email.toLowerCase());
+  if (!user) return <NoProfileScreen email={session.user.email} onLogout={signOut} />;
 
   const PAGE_TITLES = { dashboard: "Sites Dashboard", calendar: "Calendar", assets: "Assets", workorders: "Work Orders", roomdesigner: "Room Designer", users: "Users & Roles" };
 
   return (
     <MobileCtx.Provider value={isMobile}>
       <div style={{ display: "flex", background: T.bg, minHeight: "100vh", fontFamily: "Inter,system-ui,sans-serif", color: T.ink, flexDirection: isMobile ? "column" : "row" }}>
-        <Sidebar page={page} setPage={setPage} user={user} onLogout={() => setUser(null)} mobileOpen={drawerOpen} onCloseMobile={() => setDrawerOpen(false)} />
+        <Sidebar page={page} setPage={setPage} user={user} onLogout={signOut} mobileOpen={drawerOpen} onCloseMobile={() => setDrawerOpen(false)} collapsed={sidebarCollapsed} onToggleCollapse={() => setSidebarCollapsed((c) => !c)} />
         {isMobile && (
           <div style={{
             position: "sticky", top: 0, zIndex: 40, background: T.bg, borderBottom: `1px solid ${T.line}`,
@@ -1653,10 +1831,10 @@ export default function App() {
         <div style={{ flex: 1, padding: isMobile ? "14px" : "26px 32px", overflowX: "auto", minWidth: 0 }}>
           {page === "dashboard" && <SitesDashboard sites={sites} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
-          {page === "assets" && <AssetTree sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} />}
+          {page === "assets" && <AssetTree sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
           {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} />}
           {page === "roomdesigner" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
-            <RoomDesigner sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} placeEquipment={placeEquipment} />
+            <RoomDesigner sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} onDeleteRoom={deleteRoom} placeEquipment={placeEquipment} />
           </PermGate>}
           {page === "users" && <PermGate allow={["Admin"]} role={user.role} fallback={<AccessDenied />}>
             <UsersRoles users={users} onAddUser={addUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} currentUserId={user.id} />

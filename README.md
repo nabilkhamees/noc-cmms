@@ -22,6 +22,13 @@ contents of `supabase/schema.sql` → **Run**. This creates every table
 (sites, rooms, racks, equipment, parts, PM schedule, work orders, users)
 and loads the starting data (B90 and Auto sites, the four users).
 
+Then also run, in order:
+- `supabase/migration_auth.sql` — adds real login support
+- `supabase/migration_custom_types.sql` — adds support for custom
+  equipment classifications (Users can add a new type like "Battery
+  Bank" from the Assets page, and it becomes available for everyone
+  from then on)
+
 ### 2. Get your credentials
 
 Supabase project → **Project Settings** (gear icon) → **API**. You need:

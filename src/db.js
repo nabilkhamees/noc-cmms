@@ -28,7 +28,17 @@ export async function fetchAll() {
   const firstError = uErr || sErr || rErr || rkErr || eErr || pErr || pmErr || woErr;
   if (firstError) throw firstError;
 
-  const usersOut = (users || []).map((u) => ({ id: u.id, name: u.name, role: u.role, initials: u.initials }));
+  // Soft-fail on equipment_types: this table only exists once
+  // migration_custom_types.sql has been run, so don't break the whole
+  // app's data load if it's missing yet — just fall back to no custom
+  // types until the migration is run.
+  let customTypes = [];
+  try {
+    const { data, error } = await supabase.from("equipment_types").select("name").order("created_at");
+    if (!error) customTypes = (data || []).map((t) => t.name);
+  } catch (e) { /* table not migrated yet — ignore */ }
+
+  const usersOut = (users || []).map((u) => ({ id: u.id, name: u.name, role: u.role, initials: u.initials, email: u.email }));
 
   const sites = (sitesRows || []).map((s) => {
     const siteRooms = (rooms || []).filter((r) => r.site_id === s.id).map((r) => ({
@@ -62,7 +72,7 @@ export async function fetchAll() {
     completedBy: w.completed_by, dateCompleted: w.date_completed,
   }));
 
-  return { sites, workOrders: workOrdersOut, users: usersOut };
+  return { sites, workOrders: workOrdersOut, users: usersOut, customTypes };
 }
 
 /* ------------------------------------------------------------------ */
@@ -100,6 +110,11 @@ export async function dbAddRoom(siteId, room) {
   const { error } = await supabase.from("rooms").insert({
     id: room.id, site_id: siteId, name: room.name, grid_w: room.grid.w, grid_h: room.grid.h,
   });
+  if (error) throw error;
+}
+
+export async function dbDeleteRoom(roomId) {
+  const { error } = await supabase.from("rooms").delete().eq("id", roomId);
   if (error) throw error;
 }
 
@@ -164,7 +179,7 @@ export async function dbUpdateWorkOrder(woId, fields) {
 /*  Users                                                                */
 /* ------------------------------------------------------------------ */
 export async function dbAddUser(user) {
-  const { error } = await supabase.from("users").insert({ id: user.id, name: user.name, role: user.role, initials: user.initials });
+  const { error } = await supabase.from("users").insert({ id: user.id, name: user.name, role: user.role, initials: user.initials, email: user.email || null });
   if (error) throw error;
 }
 
@@ -173,11 +188,21 @@ export async function dbUpdateUser(userId, fields) {
   if (fields.name !== undefined) payload.name = fields.name;
   if (fields.role !== undefined) payload.role = fields.role;
   if (fields.initials !== undefined) payload.initials = fields.initials;
+  if (fields.email !== undefined) payload.email = fields.email;
   const { error } = await supabase.from("users").update(payload).eq("id", userId);
   if (error) throw error;
 }
 
 export async function dbDeleteUser(userId) {
   const { error } = await supabase.from("users").delete().eq("id", userId);
+  if (error) throw error;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Equipment classifications (custom "types")                         */
+/* ------------------------------------------------------------------ */
+export async function dbAddEquipmentType(name) {
+  const id = "type-" + name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  const { error } = await supabase.from("equipment_types").insert({ id, name: name.trim() });
   if (error) throw error;
 }
