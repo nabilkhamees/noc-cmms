@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbDeleteRoom, dbAddEquipment,
   dbUpdateEquipment, dbDeleteEquipment, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser,
-  dbAddEquipmentType } from "./db";
+  dbAddEquipmentType, dbSetUserSites } from "./db";
 import { supabase } from "./supabaseClient";
 
 /* ------------------------------------------------------------------ */
@@ -50,6 +50,16 @@ const mono = { fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace
 /* ------------------------------------------------------------------ */
 const ROLES = ["Admin", "Manager", "Technician"];
 const BUILTIN_EQUIPMENT_TYPES = ["Generator", "UPS", "Cooling", "Rack PDU", "Switch", "Panel Board", "Rectifier", "Equipment"];
+
+// Which sites a given user should see: Admins always see everything;
+// everyone else sees only their assigned sites — but if they haven't
+// been assigned to any yet, fall back to showing all (so a freshly
+// added teammate isn't stuck looking at a blank screen).
+function visibleSitesFor(user, sites) {
+  if (!user || user.role === "Admin") return sites;
+  if (user.siteIds && user.siteIds.length > 0) return sites.filter((s) => user.siteIds.includes(s.id));
+  return sites;
+}
 
 function initialsOf(name) {
   return name.trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("") || "?";
@@ -839,7 +849,12 @@ function EquipmentModal({ equipment, users, onClose, onUploadReport, onSaveGener
               <div style={{ border: `1.5px dashed ${T.line}`, borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 10 }}>
                 <FileText size={16} color={T.sub} />
                 <div style={{ flex: 1, fontSize: 12.5, color: T.sub }}>
-                  {equipment.report ? <span style={{ color: T.ink, fontWeight: 700 }}>{equipment.report}</span> : "Technician uploads a completion report here (PDF or Word)"}
+                  {equipment.report ? (
+                    <>
+                      <span style={{ color: T.ink, fontWeight: 700 }}>{equipment.report}</span>
+                      {equipment.reportUploadedBy && <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>Uploaded by {users.find((u) => u.id === equipment.reportUploadedBy)?.name || "—"}</div>}
+                    </>
+                  ) : "Technician uploads a completion report here (PDF or Word)"}
                 </div>
                 <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
                   onChange={(e) => e.target.files[0] && onUploadReport(equipment.id, e.target.files[0].name)} />
@@ -876,6 +891,26 @@ function FieldRow({ label, value, onChange, disabled, mono: isMono }) {
   );
 }
 const labelStyle = { fontSize: 11, fontWeight: 700, color: T.sub, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.3 };
+
+function SiteChips({ user, sites, onToggle }) {
+  const assigned = user.siteIds || [];
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6 }}>
+      <span style={{ fontSize: 10.5, fontWeight: 700, color: T.sub, textTransform: "uppercase", letterSpacing: 0.3, marginRight: 2 }}>Sites:</span>
+      {sites.map((s) => {
+        const on = assigned.includes(s.id);
+        return (
+          <button key={s.id} onClick={() => onToggle(user, s.id)} style={{
+            border: `1px solid ${on ? T.teal : T.line}`, background: on ? "#E4F5F3" : "#fff",
+            color: on ? T.tealDeep : T.sub, borderRadius: 20, padding: "3px 10px", fontSize: 11,
+            fontWeight: 700, cursor: "pointer",
+          }}>{s.name}</button>
+        );
+      })}
+      {assigned.length === 0 && <span style={{ fontSize: 10.5, color: T.sub, fontStyle: "italic" }}>none picked — sees all sites</span>}
+    </div>
+  );
+}
 
 function CustomFieldsEditor({ fields, canEdit, onChange }) {
   const [k, setK] = useState(""); const [v, setV] = useState("");
@@ -939,7 +974,10 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
 
   const uploadBtn = (w) => (
     w.report ? (
-      <span style={{ fontSize: 11.5, color: T.teal, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}><FileText size={12} />{w.report}</span>
+      <div>
+        <span style={{ fontSize: 11.5, color: T.teal, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}><FileText size={12} />{w.report}</span>
+        {w.reportUploadedBy && <div style={{ fontSize: 10, color: T.sub, marginTop: 2 }}>by {users.find((u) => u.id === w.reportUploadedBy)?.name || "—"}</div>}
+      </div>
     ) : (
       <>
         <input ref={(el) => (fileRefs.current[w.id] = el)} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
@@ -1163,7 +1201,12 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
               <div style={{ border: `1.5px dashed ${T.line}`, borderRadius: 10, padding: 14, display: "flex", alignItems: "center", gap: 10 }}>
                 <FileText size={16} color={T.sub} />
                 <div style={{ flex: 1, fontSize: 12.5, color: T.sub }}>
-                  {wo.report ? <span style={{ color: T.ink, fontWeight: 700 }}>{wo.report}</span> : "Upload the technician's report — PDF or Word"}
+                  {wo.report ? (
+                    <>
+                      <span style={{ color: T.ink, fontWeight: 700 }}>{wo.report}</span>
+                      {wo.reportUploadedBy && <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>Uploaded by {users.find((u) => u.id === wo.reportUploadedBy)?.name || "—"}</div>}
+                    </>
+                  ) : "Upload the technician's report — PDF or Word"}
                 </div>
                 <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
                   onChange={(e) => e.target.files[0] && onUploadReport(wo.id, e.target.files[0].name)} />
@@ -1192,7 +1235,7 @@ function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, onDeleteRoom,
   const [newRoomName, setNewRoomName] = useState("");
   const [dragEq, setDragEq] = useState(null);
   const room = site.rooms.find((r) => r.id === roomId) || site.rooms[0];
-  const unplaced = site.equipment.filter((e) => e.roomId !== room?.id);
+  const unplaced = site.equipment.filter((e) => e.roomId === room?.id && !e.pos);
   const isMobile = useIsMobile();
 
   const cellSize = 54;
@@ -1292,7 +1335,7 @@ function RoomDesigner({ sites, activeSite, setActiveSite, addRoom, onDeleteRoom,
 /* ------------------------------------------------------------------ */
 /*  Users & Roles (Admin only)                                         */
 /* ------------------------------------------------------------------ */
-function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserId }) {
+function UsersRoles({ users, sites, onAddUser, onUpdateUser, onDeleteUser, onUpdateUserSites, currentUserId }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("Technician");
@@ -1318,6 +1361,11 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
     payload.email = editEmail.trim() || null;
     onUpdateUser(id, payload);
     setEditingId(null);
+  };
+  const toggleSite = (u, siteId) => {
+    const cur = u.siteIds || [];
+    const next = cur.includes(siteId) ? cur.filter((id) => id !== siteId) : [...cur, siteId];
+    onUpdateUserSites(u.id, next);
   };
 
   const isMobile = useIsMobile();
@@ -1389,6 +1437,7 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
               <span style={{ fontSize: 11.5, color: T.sub }}>
                 {u.role === "Admin" ? "Full access" : u.role === "Manager" ? "Sites, assets, work orders" : "Assigned work orders only"}
               </span>
+              <SiteChips user={u} sites={sites} onToggle={toggleSite} />
             </div>
           ))}
         </div>
@@ -1430,6 +1479,9 @@ function UsersRoles({ users, onAddUser, onUpdateUser, onDeleteUser, currentUserI
               <button onClick={() => removeMember(u.id)} disabled={u.id === currentUserId} style={{ ...iconBtn, opacity: u.id === currentUserId ? 0.35 : 1, cursor: u.id === currentUserId ? "not-allowed" : "pointer" }} title="Remove">
                 <Trash2 size={14} color={T.red} />
               </button>
+            </div>
+            <div style={{ gridColumn: "1 / -1", paddingTop: 8 }}>
+              <SiteChips user={u} sites={sites} onToggle={toggleSite} />
             </div>
           </div>
         ))}
@@ -1655,12 +1707,12 @@ export default function App() {
   const onDbError = (err) => { console.error(err); loadData(); };
 
   const uploadEquipmentReport = (eqId, filename) => {
-    setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, report: filename } : e) })));
-    dbUpdateEquipment(eqId, { report: filename }).catch(onDbError);
+    setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, report: filename, reportUploadedBy: user?.id } : e) })));
+    dbUpdateEquipment(eqId, { report: filename, reportUploadedBy: user?.id }).catch(onDbError);
   };
   const uploadWOReport = (woId, filename) => {
-    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, report: filename, status: "In Progress" } : w));
-    dbUpdateWorkOrder(woId, { report: filename, status: "In Progress" }).catch(onDbError);
+    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, report: filename, status: "In Progress", reportUploadedBy: user?.id } : w));
+    dbUpdateWorkOrder(woId, { report: filename, status: "In Progress", reportUploadedBy: user?.id }).catch(onDbError);
   };
   const setWOStatus = (woId, status) => {
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, status } : w));
@@ -1750,6 +1802,10 @@ export default function App() {
     setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, ...fields } : u));
     dbUpdateUser(userId, fields).catch(onDbError);
   };
+  const updateUserSites = (userId, siteIds) => {
+    setUsers((prev) => prev.map((u) => u.id === userId ? { ...u, siteIds } : u));
+    dbSetUserSites(userId, siteIds).catch(onDbError);
+  };
   const deleteUser = (userId) => {
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     dbDeleteUser(userId).catch(onDbError);
@@ -1829,15 +1885,15 @@ export default function App() {
           </div>
         )}
         <div style={{ flex: 1, padding: isMobile ? "14px" : "26px 32px", overflowX: "auto", minWidth: 0 }}>
-          {page === "dashboard" && <SitesDashboard sites={sites} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
+          {page === "dashboard" && <SitesDashboard sites={visibleSitesFor(user, sites)} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
-          {page === "assets" && <AssetTree sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
+          {page === "assets" && <AssetTree sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
           {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} />}
           {page === "roomdesigner" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
-            <RoomDesigner sites={sites} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} onDeleteRoom={deleteRoom} placeEquipment={placeEquipment} />
+            <RoomDesigner sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} onDeleteRoom={deleteRoom} placeEquipment={placeEquipment} />
           </PermGate>}
           {page === "users" && <PermGate allow={["Admin"]} role={user.role} fallback={<AccessDenied />}>
-            <UsersRoles users={users} onAddUser={addUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} currentUserId={user.id} />
+            <UsersRoles users={users} sites={sites} onAddUser={addUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} onUpdateUserSites={updateUserSites} currentUserId={user.id} />
           </PermGate>}
         </div>
         <EquipmentModal equipment={openEquipment} users={users} onClose={() => setOpenEqId(null)} onUploadReport={uploadEquipmentReport} onSaveGeneral={saveEquipmentGeneral} role={user.role} />

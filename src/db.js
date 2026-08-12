@@ -28,17 +28,25 @@ export async function fetchAll() {
   const firstError = uErr || sErr || rErr || rkErr || eErr || pErr || pmErr || woErr;
   if (firstError) throw firstError;
 
-  // Soft-fail on equipment_types: this table only exists once
-  // migration_custom_types.sql has been run, so don't break the whole
-  // app's data load if it's missing yet — just fall back to no custom
-  // types until the migration is run.
+  // Soft-fail on equipment_types and user_sites: these tables only
+  // exist once their migrations have been run, so don't break the
+  // whole app's data load if they're missing yet.
   let customTypes = [];
   try {
     const { data, error } = await supabase.from("equipment_types").select("name").order("created_at");
     if (!error) customTypes = (data || []).map((t) => t.name);
   } catch (e) { /* table not migrated yet — ignore */ }
 
-  const usersOut = (users || []).map((u) => ({ id: u.id, name: u.name, role: u.role, initials: u.initials, email: u.email }));
+  let userSites = [];
+  try {
+    const { data, error } = await supabase.from("user_sites").select("user_id, site_id");
+    if (!error) userSites = data || [];
+  } catch (e) { /* table not migrated yet — ignore */ }
+
+  const usersOut = (users || []).map((u) => ({
+    id: u.id, name: u.name, role: u.role, initials: u.initials, email: u.email,
+    siteIds: userSites.filter((us) => us.user_id === u.id).map((us) => us.site_id),
+  }));
 
   const sites = (sitesRows || []).map((s) => {
     const siteRooms = (rooms || []).filter((r) => r.site_id === s.id).map((r) => ({
@@ -51,7 +59,7 @@ export async function fetchAll() {
       id: e.id, code: e.code, name: e.name, type: e.type, roomId: e.room_id, rackId: e.rack_id,
       status: e.status, installYear: e.install_year, make: e.make, model: e.model, serial: e.serial,
       barcode: e.barcode, category: e.category, account: e.account, chargeDept: e.charge_dept,
-      notes: e.notes, location: e.location, report: e.report,
+      notes: e.notes, location: e.location, report: e.report, reportUploadedBy: e.report_uploaded_by,
       pos: e.pos_x != null && e.pos_y != null ? { x: e.pos_x, y: e.pos_y } : undefined,
       customFields: e.custom_fields || [],
       parts: (parts || []).filter((p) => p.equipment_id === e.id).map((p) => ({
@@ -69,7 +77,7 @@ export async function fetchAll() {
     description: w.description, summary: w.summary, priority: w.priority, type: w.type, assignedTo: w.assigned_to,
     status: w.status, mop: w.mop, dueDate: w.due_date, suggestedStart: w.suggested_start, report: w.report,
     instructions: w.instructions || [], estLabor: w.est_labor, actLabor: w.act_labor,
-    completedBy: w.completed_by, dateCompleted: w.date_completed,
+    completedBy: w.completed_by, dateCompleted: w.date_completed, reportUploadedBy: w.report_uploaded_by,
   }));
 
   return { sites, workOrders: workOrdersOut, users: usersOut, customTypes };
@@ -145,6 +153,7 @@ export async function dbUpdateEquipment(eqId, fields) {
   if (fields.notes !== undefined) payload.notes = fields.notes;
   if (fields.customFields !== undefined) payload.custom_fields = fields.customFields;
   if (fields.report !== undefined) payload.report = fields.report;
+  if (fields.reportUploadedBy !== undefined) payload.report_uploaded_by = fields.reportUploadedBy;
   if (fields.roomId !== undefined) payload.room_id = fields.roomId;
   if (fields.pos !== undefined) { payload.pos_x = fields.pos.x; payload.pos_y = fields.pos.y; }
   const { error } = await supabase.from("equipment").update(payload).eq("id", eqId);
@@ -171,6 +180,7 @@ export async function dbUpdateWorkOrder(woId, fields) {
   if (fields.completedBy !== undefined) payload.completed_by = fields.completedBy;
   if (fields.dateCompleted !== undefined) payload.date_completed = fields.dateCompleted;
   if (fields.report !== undefined) payload.report = fields.report;
+  if (fields.reportUploadedBy !== undefined) payload.report_uploaded_by = fields.reportUploadedBy;
   const { error } = await supabase.from("work_orders").update(payload).eq("id", woId);
   if (error) throw error;
 }
@@ -205,4 +215,16 @@ export async function dbAddEquipmentType(name) {
   const id = "type-" + name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const { error } = await supabase.from("equipment_types").insert({ id, name: name.trim() });
   if (error) throw error;
+}
+
+/* ------------------------------------------------------------------ */
+/*  User ↔ site assignments                                            */
+/* ------------------------------------------------------------------ */
+export async function dbSetUserSites(userId, siteIds) {
+  const { error: delErr } = await supabase.from("user_sites").delete().eq("user_id", userId);
+  if (delErr) throw delErr;
+  if (siteIds.length > 0) {
+    const { error: insErr } = await supabase.from("user_sites").insert(siteIds.map((siteId) => ({ user_id: userId, site_id: siteId })));
+    if (insErr) throw insErr;
+  }
 }

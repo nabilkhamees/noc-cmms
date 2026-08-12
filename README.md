@@ -28,6 +28,14 @@ Then also run, in order:
   equipment classifications (Users can add a new type like "Battery
   Bank" from the Assets page, and it becomes available for everyone
   from then on)
+- `supabase/migration_user_sites.sql` — lets Admins assign each user to
+  one or more sites (Users & Roles page); a user assigned to no sites
+  sees all of them
+- `supabase/migration_report_uploader.sql` — tracks which user actually
+  uploaded a work order's or equipment's report file, shown next to the
+  filename
+- `supabase/seed_examples.sql` — optional: adds sample equipment and
+  work orders so the app isn't empty while demoing. Safe to re-run.
 
 ### 2. Get your credentials
 
