@@ -457,6 +457,15 @@ function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, on
   const crossSiteMatches = q.trim() ? sites.flatMap((s) => s.equipment.filter(matchesQuery).map((e) => ({ ...e, siteId: s.id, siteName: s.name }))) : [];
   const crossSiteHits = crossSiteMatches.filter((e) => e.siteId !== site.id);
 
+  // Group the list by classification (type), ordered to match the
+  // equipmentTypes list (so it stays consistent with the Add-asset
+  // dropdown order), with any leftover/unrecognized types appended last.
+  const groupedByType = (() => {
+    const byType = {};
+    visibleList.forEach((e) => { const t = e.type || "Uncategorized"; (byType[t] = byType[t] || []).push(e); });
+    const orderedKeys = [...(equipmentTypes || []), ...Object.keys(byType).filter((k) => !(equipmentTypes || []).includes(k))];
+    return orderedKeys.filter((k) => byType[k]?.length).map((k) => [k, byType[k]]);
+  })();
   return (
     <div>
       <PageHeader
@@ -600,58 +609,79 @@ function AssetTree({ sites, activeSite, setActiveSite, onOpenEquipment, role, on
 
       {view === "list" ? (
         isMobile ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {visibleList.map((e) => {
-              const room = site.rooms.find((r) => r.id === e.roomId);
-              return (
-                <div key={e.id} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <button onClick={() => onOpenEquipment(e.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
-                      <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{e.name}</div>
-                      <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>{e.code}{e.serial ? ` · S/N ${e.serial}` : ""}</div>
-                    </button>
-                    {canEdit && <button onClick={() => onDeleteEquipment(site.id, e.id)} style={iconBtn} title="Delete"><Trash2 size={13} color={T.red} /></button>}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <Badge tone={e.type === "Generator" ? "amber" : e.type === "Cooling" ? "violet" : "teal"}>{e.type}</Badge>
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.ink }}>
-                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor(e.status) }} />{e.status}
-                    </span>
-                    <span style={{ fontSize: 11.5, color: T.sub, ...mono }}>{e.installYear}</span>
-                  </div>
-                  <div style={{ fontSize: 12, color: T.sub }}>{site.name} · {room?.name}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+            {groupedByType.map(([typeName, items]) => (
+              <div key={typeName}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 800, color: T.ink, textTransform: "uppercase", letterSpacing: 0.4 }}>{typeName}</span>
+                  <span style={{ fontSize: 11, color: T.sub, background: T.panel, borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{items.length}</span>
+                  <div style={{ flex: 1, height: 1, background: T.line }} />
                 </div>
-              );
-            })}
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {items.map((e) => {
+                    const room = site.rooms.find((r) => r.id === e.roomId);
+                    return (
+                      <div key={e.id} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <button onClick={() => onOpenEquipment(e.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                            <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{e.name}</div>
+                            <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>{e.code}{e.serial ? ` · S/N ${e.serial}` : ""}</div>
+                          </button>
+                          {canEdit && <button onClick={() => onDeleteEquipment(site.id, e.id)} style={iconBtn} title="Delete"><Trash2 size={13} color={T.red} /></button>}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: T.ink }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor(e.status) }} />{e.status}
+                          </span>
+                          <span style={{ fontSize: 11.5, color: T.sub, ...mono }}>{e.installYear}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: T.sub }}>{site.name} · {room?.name}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
             {visibleList.length === 0 && <div style={{ padding: 30, textAlign: "center", color: T.sub, fontSize: 13 }}>No assets match.</div>}
           </div>
         ) : (
-        <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, overflow: "hidden" }}>
-          <div style={{ ...assetRowGrid, background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase", letterSpacing: 0.3 }}>
-            <div>Code</div><div>Description</div><div>Type</div><div>Location</div><div>Status</div><div>Install year</div><div></div>
-          </div>
-          {visibleList.map((e) => {
-            const room = site.rooms.find((r) => r.id === e.roomId);
-            return (
-              <div key={e.id} style={assetRowGrid}>
-                <button onClick={() => onOpenEquipment(e.id)} style={{ ...mono, fontSize: 12, color: T.teal, fontWeight: 700, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>{e.code}</button>
-                <button onClick={() => onOpenEquipment(e.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{e.name}</div>
-                  {e.serial && <div style={{ fontSize: 10.5, color: T.sub, ...mono }}>S/N {e.serial}</div>}
-                </button>
-                <div><Badge tone={e.type === "Generator" ? "amber" : e.type === "Cooling" ? "violet" : "teal"}>{e.type}</Badge></div>
-                <div style={{ fontSize: 12, color: T.sub }}>{site.name} · {room?.name}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor(e.status) }} />
-                  <span style={{ fontSize: 12, color: T.ink }}>{e.status}</span>
-                </div>
-                <div style={{ fontSize: 12, color: T.ink, ...mono }}>{e.installYear}</div>
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  {canEdit && <button onClick={() => onDeleteEquipment(site.id, e.id)} style={iconBtn} title="Delete"><Trash2 size={13} color={T.red} /></button>}
-                </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          {groupedByType.map(([typeName, items]) => (
+            <div key={typeName}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, textTransform: "uppercase", letterSpacing: 0.4 }}>{typeName}</span>
+                <span style={{ fontSize: 11, color: T.sub, background: T.panel, borderRadius: 10, padding: "1px 8px", fontWeight: 700 }}>{items.length}</span>
+                <div style={{ flex: 1, height: 1, background: T.line }} />
               </div>
-            );
-          })}
+              <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, overflow: "hidden" }}>
+                <div style={{ ...assetRowGrid, background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                  <div>Code</div><div>Description</div><div>Type</div><div>Location</div><div>Status</div><div>Install year</div><div></div>
+                </div>
+                {items.map((e) => {
+                  const room = site.rooms.find((r) => r.id === e.roomId);
+                  return (
+                    <div key={e.id} style={assetRowGrid}>
+                      <button onClick={() => onOpenEquipment(e.id)} style={{ ...mono, fontSize: 12, color: T.teal, fontWeight: 700, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>{e.code}</button>
+                      <button onClick={() => onOpenEquipment(e.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{e.name}</div>
+                        {e.serial && <div style={{ fontSize: 10.5, color: T.sub, ...mono }}>S/N {e.serial}</div>}
+                      </button>
+                      <div><Badge tone={e.type === "Generator" ? "amber" : e.type === "Cooling" ? "violet" : "teal"}>{e.type}</Badge></div>
+                      <div style={{ fontSize: 12, color: T.sub }}>{site.name} · {room?.name}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: "50%", background: statusColor(e.status) }} />
+                        <span style={{ fontSize: 12, color: T.ink }}>{e.status}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: T.ink, ...mono }}>{e.installYear}</div>
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        {canEdit && <button onClick={() => onDeleteEquipment(site.id, e.id)} style={iconBtn} title="Delete"><Trash2 size={13} color={T.red} /></button>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           {visibleList.length === 0 && <div style={{ padding: 30, textAlign: "center", color: T.sub, fontSize: 13 }}>No assets match.</div>}
         </div>
         )
