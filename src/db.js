@@ -168,6 +168,16 @@ export async function dbDeleteEquipment(eqId) {
 /* ------------------------------------------------------------------ */
 /*  Work orders                                                         */
 /* ------------------------------------------------------------------ */
+export async function dbAddWorkOrder(wo) {
+  const { error } = await supabase.from("work_orders").insert({
+    id: wo.id, code: wo.code, site_id: wo.siteId, equipment_id: wo.equipmentId, equipment_name: wo.equipmentName,
+    description: wo.description, summary: wo.summary, priority: wo.priority, type: wo.type,
+    assigned_to: wo.assignedTo, status: wo.status, mop: wo.mop, due_date: wo.dueDate,
+    suggested_start: wo.suggestedStart, instructions: wo.instructions || [], est_labor: wo.estLabor,
+  });
+  if (error) throw error;
+}
+
 export async function dbUpdateWorkOrder(woId, fields) {
   const payload = {};
   if (fields.status !== undefined) payload.status = fields.status;

@@ -6,7 +6,7 @@ import {
   Trash2, Save, Layers, Zap, Calendar, ChevronLeft, Menu, Loader2, MoreVertical
 } from "lucide-react";
 import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbDeleteRoom, dbAddEquipment,
-  dbUpdateEquipment, dbDeleteEquipment, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser,
+  dbUpdateEquipment, dbDeleteEquipment, dbAddWorkOrder, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser,
   dbAddEquipmentType, dbSetUserSites } from "./db";
 import { supabase } from "./supabaseClient";
 
@@ -717,7 +717,7 @@ function monthsLeft(installedDate, lifetimeMonths) {
 
 const EQ_TABS = ["General", "Parts/BOM", "Personnel", "Custom", "Warranties", "Purchasing", "Files", "Log"];
 
-function EquipmentModal({ equipment, users, onClose, onUploadReport, onSaveGeneral, role }) {
+function EquipmentModal({ equipment, users, onClose, onUploadReport, onSaveGeneral, onNewWorkOrder, role }) {
   const fileRef = useRef();
   const [tab, setTab] = useState("General");
   const [draft, setDraft] = useState(null);
@@ -731,9 +731,10 @@ function EquipmentModal({ equipment, users, onClose, onUploadReport, onSaveGener
     <div style={isMobile ? mobileOverlayStyle() : overlayStyle} onClick={onClose}>
       <div style={isMobile ? mobileModalStyle({ ...modalStyle, padding: 0 }) : { ...modalStyle, maxWidth: 860, padding: 0 }} onClick={(e) => e.stopPropagation()}>
         {/* top bar, like the Fiix "Equipment:" header */}
-        <div style={{ padding: "18px 26px", borderBottom: `1px solid ${T.line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ padding: "18px 26px", borderBottom: `1px solid ${T.line}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <div style={{ fontSize: 12.5, color: T.sub, fontWeight: 700 }}>Equipment: <span style={{ color: T.ink }}>{equipment.name} ({equipment.code})</span></div>
           <div style={{ display: "flex", gap: 8 }}>
+            {canEdit && <button onClick={onNewWorkOrder} style={{ ...smallBtn, background: T.panel, color: T.ink }}><Plus size={12} style={{ marginRight: 4 }} />New work order</button>}
             {canEdit && <button onClick={() => onSaveGeneral(equipment.id, draft)} style={smallBtn}><Save size={12} style={{ marginRight: 4 }} />Save</button>}
             <button onClick={onClose} style={iconBtn}><X size={18} /></button>
           </div>
@@ -960,7 +961,7 @@ const smallBtn = { border: "none", background: T.ink, color: "#fff", borderRadiu
 /* ------------------------------------------------------------------ */
 /*  Work Orders                                                        */
 /* ------------------------------------------------------------------ */
-function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, onOpen }) {
+function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, onOpen, onNewWorkOrder }) {
   const [q, setQ] = useState("");
   const fileRefs = useRef({});
   const isMobile = useIsMobile();
@@ -993,11 +994,16 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
     <div>
       <PageHeader title="Work Orders" sub={user.role === "Technician" ? "Assigned to you" : "All facilities"}
         right={
-          <div style={{ position: "relative" }}>
-            <Search size={14} style={{ position: "absolute", left: 10, top: 10, color: T.sub }} />
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search work orders…"
-              style={{ ...selStyle, paddingLeft: 30, width: isMobile ? "100%" : 220 }} />
-          </div>
+          <>
+            <div style={{ position: "relative" }}>
+              <Search size={14} style={{ position: "absolute", left: 10, top: 10, color: T.sub }} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search work orders…"
+                style={{ ...selStyle, paddingLeft: 30, width: isMobile ? "100%" : 220 }} />
+            </div>
+            {(user.role === "Admin" || user.role === "Manager") && (
+              <button onClick={onNewWorkOrder} style={smallBtn}><Plus size={12} style={{ marginRight: 4 }} />New work order</button>
+            )}
+          </>
         } />
 
       {isMobile ? (
@@ -1065,6 +1071,104 @@ const rowGrid = { display: "grid", gridTemplateColumns: "70px 2fr 100px 130px 90
 /* ------------------------------------------------------------------ */
 /*  Work Order Administration modal — mirrors the Fiix WO screen       */
 /* ------------------------------------------------------------------ */
+function NewWorkOrderModal({ open, preset, sites, users, onClose, onCreate }) {
+  const isMobile = useIsMobile();
+  const [siteId, setSiteId] = useState("");
+  const [equipmentId, setEquipmentId] = useState("");
+  const [description, setDescription] = useState("");
+  const [type, setType] = useState("Corrective");
+  const [priority, setPriority] = useState("High");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [estLabor, setEstLabor] = useState("1.0h");
+
+  useEffect(() => {
+    if (!open) return;
+    setSiteId(preset?.siteId || sites[0]?.id || "");
+    setEquipmentId(preset?.equipmentId || "");
+    setDescription("");
+    setType("Corrective");
+    setPriority("High");
+    setAssignedTo(users.find((u) => u.role === "Technician")?.id || users[0]?.id || "");
+    setDueDate(new Date().toISOString().slice(0, 10));
+    setEstLabor("1.0h");
+  }, [open, preset]);
+
+  if (!open) return null;
+  const site = sites.find((s) => s.id === siteId);
+  const equipmentOptions = site?.equipment || [];
+
+  const submit = () => {
+    if (!description.trim() || !siteId || !assignedTo) return;
+    const eq = equipmentOptions.find((e) => e.id === equipmentId);
+    onCreate({
+      siteId, equipmentId: equipmentId || null, equipmentName: eq?.name || "", description: description.trim(),
+      type, priority, assignedTo, dueDate: dueDate || new Date().toISOString().slice(0, 10), estLabor,
+    });
+    onClose();
+  };
+
+  return (
+    <div style={isMobile ? mobileOverlayStyle() : overlayStyle} onClick={onClose}>
+      <div style={isMobile ? mobileModalStyle({ ...modalStyle, maxWidth: 520 }) : { ...modalStyle, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 16, fontWeight: 800, color: T.ink }}>New work order</div>
+          <button onClick={onClose} style={iconBtn}><X size={18} /></button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div>
+            <div style={labelStyle}>Site</div>
+            <select value={siteId} onChange={(e) => { setSiteId(e.target.value); setEquipmentId(""); }} style={{ ...selStyle, width: "100%" }}>
+              {sites.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={labelStyle}>Equipment (optional)</div>
+            <select value={equipmentId} onChange={(e) => setEquipmentId(e.target.value)} style={{ ...selStyle, width: "100%" }}>
+              <option value="">— General / not equipment-specific —</option>
+              {equipmentOptions.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={labelStyle}>Description</div>
+            <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} placeholder="What needs to be done?"
+              style={{ width: "100%", border: `1px solid ${T.line}`, borderRadius: 9, padding: "9px 11px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit" }} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+            <div>
+              <div style={labelStyle}>Type</div>
+              <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...selStyle, width: "100%" }}>
+                {["Preventive", "Corrective", "Other"].map((t) => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Priority</div>
+              <select value={priority} onChange={(e) => setPriority(e.target.value)} style={{ ...selStyle, width: "100%" }}>
+                {["Low", "High", "Highest"].map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Assign to</div>
+              <select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)} style={{ ...selStyle, width: "100%" }}>
+                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={labelStyle}>Due date</div>
+              <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={{ ...selStyle, width: "100%" }} />
+            </div>
+          </div>
+          <FieldRow label="Estimated labor" value={estLabor} onChange={setEstLabor} />
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 18 }}>
+          <button onClick={submit} style={smallBtn}><Plus size={12} style={{ marginRight: 4 }} />Create work order</button>
+          <button onClick={onClose} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const WO_TABS = ["General", "Completion", "Labor Tasks", "Parts", "Meter Readings", "Files", "Work Log"];
 
 function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, role }) {
@@ -1650,6 +1754,7 @@ export default function App() {
   const [activeSite, setActiveSite] = useState(null);
   const [openEqId, setOpenEqId] = useState(null);
   const [openWoId, setOpenWoId] = useState(null);
+  const [newWODraft, setNewWODraft] = useState(null); // null = closed, object = open with optional preset
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isMobile = useWindowIsMobile();
@@ -1721,6 +1826,26 @@ export default function App() {
   const saveWorkOrder = (woId, draft) => {
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...draft } : w));
     dbUpdateWorkOrder(woId, draft).catch(onDbError);
+  };
+  const addWorkOrder = (draft) => {
+    const code = Math.max(90, ...workOrders.map((w) => w.code || 0)) + 1;
+    const wo = {
+      id: "wo" + Date.now(), code,
+      siteId: draft.siteId, equipmentId: draft.equipmentId || null, equipmentName: draft.equipmentName || "",
+      description: draft.description, summary: draft.description, priority: draft.priority, type: draft.type,
+      assignedTo: draft.assignedTo, status: "Open", mop: null, dueDate: draft.dueDate, suggestedStart: draft.dueDate,
+      instructions: draft.instructions && draft.instructions.length ? draft.instructions : [
+        `Inspect ${draft.equipmentName || "asset"}`,
+        "Check fluid levels / connections",
+        "Record meter reading before starting",
+        `Perform ${draft.type.toLowerCase()} tasks per MOP`,
+        "Take a photo for each step and attach to Files",
+        "Sign off and complete work order",
+      ],
+      estLabor: draft.estLabor || "1.0h", actLabor: "", completedBy: "", dateCompleted: "", report: null, reportUploadedBy: null,
+    };
+    setWorkOrders((prev) => [...prev, wo]);
+    dbAddWorkOrder(wo).catch(onDbError);
   };
   const saveEquipmentGeneral = (eqId, draft) => {
     setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, ...draft } : e) })));
@@ -1888,7 +2013,7 @@ export default function App() {
           {page === "dashboard" && <SitesDashboard sites={visibleSitesFor(user, sites)} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
           {page === "assets" && <AssetTree sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
-          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} />}
+          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})} />}
           {page === "roomdesigner" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
             <RoomDesigner sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} onDeleteRoom={deleteRoom} placeEquipment={placeEquipment} />
           </PermGate>}
@@ -1896,8 +2021,14 @@ export default function App() {
             <UsersRoles users={users} sites={sites} onAddUser={addUser} onUpdateUser={updateUser} onDeleteUser={deleteUser} onUpdateUserSites={updateUserSites} currentUserId={user.id} />
           </PermGate>}
         </div>
-        <EquipmentModal equipment={openEquipment} users={users} onClose={() => setOpenEqId(null)} onUploadReport={uploadEquipmentReport} onSaveGeneral={saveEquipmentGeneral} role={user.role} />
+        <EquipmentModal equipment={openEquipment} users={users} onClose={() => setOpenEqId(null)} onUploadReport={uploadEquipmentReport} onSaveGeneral={saveEquipmentGeneral} role={user.role}
+          onNewWorkOrder={() => {
+            if (!openEquipment) return;
+            const ownerSite = sites.find((s) => s.equipment.some((e) => e.id === openEquipment.id));
+            setNewWODraft({ siteId: ownerSite?.id, equipmentId: openEquipment.id, equipmentName: openEquipment.name });
+          }} />
         <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} role={user.role} />
+        <NewWorkOrderModal open={!!newWODraft} preset={newWODraft} sites={visibleSitesFor(user, sites)} users={users} onClose={() => setNewWODraft(null)} onCreate={addWorkOrder} />
       </div>
     </MobileCtx.Provider>
   );
