@@ -38,6 +38,10 @@ Then also run, in order:
   above rooms, for sites with more than one floor. Only shows up in the
   Assets → Rooms view once a site actually has a floor added; single-
   floor sites look exactly as before.
+- `supabase/migration_file_storage.sql` — enables real file storage for
+  report uploads (PDF/Word). Before this, uploads only remembered the
+  filename; after, the actual file is stored and the filename becomes a
+  clickable link that opens/downloads it. 50MB per file on the free plan.
 - `supabase/seed_examples.sql` — optional: adds sample equipment and
   work orders so the app isn't empty while demoing. Safe to re-run.
 

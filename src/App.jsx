@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { fetchAll, dbAddSite, dbUpdateSite, dbDeleteSite, dbAddRoom, dbDeleteRoom, dbAddFloor, dbDeleteFloor, dbAddEquipment,
   dbUpdateEquipment, dbDeleteEquipment, dbAddWorkOrder, dbUpdateWorkOrder, dbAddUser, dbUpdateUser, dbDeleteUser,
-  dbAddEquipmentType, dbSetUserSites, notifyAssignment } from "./db";
+  dbAddEquipmentType, dbSetUserSites, notifyAssignment, uploadReportFile } from "./db";
 import { supabase } from "./supabaseClient";
 
 /* ------------------------------------------------------------------ */
@@ -945,13 +945,17 @@ function EquipmentModal({ equipment, users, onClose, onUploadReport, onSaveGener
                 <div style={{ flex: 1, fontSize: 12.5, color: T.sub }}>
                   {equipment.report ? (
                     <>
-                      <span style={{ color: T.ink, fontWeight: 700 }}>{equipment.report}</span>
+                      {equipment.reportUrl ? (
+                        <a href={equipment.reportUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.teal, fontWeight: 700, textDecoration: "none" }}>{equipment.report}</a>
+                      ) : (
+                        <span style={{ color: T.ink, fontWeight: 700 }}>{equipment.report}</span>
+                      )}
                       {equipment.reportUploadedBy && <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>Uploaded by {users.find((u) => u.id === equipment.reportUploadedBy)?.name || "—"}</div>}
                     </>
                   ) : "Technician uploads a completion report here (PDF or Word)"}
                 </div>
                 <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
-                  onChange={(e) => e.target.files[0] && onUploadReport(equipment.id, e.target.files[0].name)} />
+                  onChange={(e) => e.target.files[0] && onUploadReport(equipment.id, e.target.files[0])} />
                 <button onClick={() => fileRef.current.click()} style={smallBtn}>Upload</button>
               </div>
             </>
@@ -1069,13 +1073,17 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
   const uploadBtn = (w) => (
     w.report ? (
       <div>
-        <span style={{ fontSize: 11.5, color: T.teal, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}><FileText size={12} />{w.report}</span>
+        {w.reportUrl ? (
+          <a href={w.reportUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: T.teal, fontWeight: 700, display: "flex", alignItems: "center", gap: 4, textDecoration: "none" }}><FileText size={12} />{w.report}</a>
+        ) : (
+          <span style={{ fontSize: 11.5, color: T.teal, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}><FileText size={12} />{w.report}</span>
+        )}
         {w.reportUploadedBy && <div style={{ fontSize: 10, color: T.sub, marginTop: 2 }}>by {users.find((u) => u.id === w.reportUploadedBy)?.name || "—"}</div>}
       </div>
     ) : (
       <>
         <input ref={(el) => (fileRefs.current[w.id] = el)} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
-          onChange={(e) => e.target.files[0] && onUploadReport(w.id, e.target.files[0].name)} />
+          onChange={(e) => e.target.files[0] && onUploadReport(w.id, e.target.files[0])} />
         <button onClick={() => fileRefs.current[w.id].click()} style={{ ...smallBtn, background: T.panel, color: T.ink }}>
           <Upload size={11} style={{ marginRight: 4 }} />Upload
         </button>
@@ -1400,13 +1408,17 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
                 <div style={{ flex: 1, fontSize: 12.5, color: T.sub }}>
                   {wo.report ? (
                     <>
-                      <span style={{ color: T.ink, fontWeight: 700 }}>{wo.report}</span>
+                      {wo.reportUrl ? (
+                        <a href={wo.reportUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.teal, fontWeight: 700, textDecoration: "none" }}>{wo.report}</a>
+                      ) : (
+                        <span style={{ color: T.ink, fontWeight: 700 }}>{wo.report}</span>
+                      )}
                       {wo.reportUploadedBy && <div style={{ fontSize: 11, color: T.sub, marginTop: 2 }}>Uploaded by {users.find((u) => u.id === wo.reportUploadedBy)?.name || "—"}</div>}
                     </>
                   ) : "Upload the technician's report — PDF or Word"}
                 </div>
                 <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
-                  onChange={(e) => e.target.files[0] && onUploadReport(wo.id, e.target.files[0].name)} />
+                  onChange={(e) => e.target.files[0] && onUploadReport(wo.id, e.target.files[0])} />
                 <button onClick={() => fileRef.current.click()} style={smallBtn}>Upload</button>
               </div>
             </>
@@ -2037,13 +2049,25 @@ export default function App() {
   // never silently drifts out of sync with what's actually saved.
   const onDbError = (err) => { console.error(err); loadData(); };
 
-  const uploadEquipmentReport = (eqId, filename) => {
-    setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, report: filename, reportUploadedBy: user?.id } : e) })));
-    dbUpdateEquipment(eqId, { report: filename, reportUploadedBy: user?.id }).catch(onDbError);
+  const uploadEquipmentReport = async (eqId, file) => {
+    if (file.size > 50 * 1024 * 1024) { alert("That file is over 50MB — the current storage plan's per-file limit. Try a smaller file, or compress it first."); return; }
+    try {
+      const { url } = await uploadReportFile(file, `equipment/${eqId}`);
+      setSites((prev) => prev.map((s) => ({ ...s, equipment: s.equipment.map((e) => e.id === eqId ? { ...e, report: file.name, reportUrl: url, reportUploadedBy: user?.id } : e) })));
+      dbUpdateEquipment(eqId, { report: file.name, reportUrl: url, reportUploadedBy: user?.id }).catch(onDbError);
+    } catch (err) {
+      alert("Upload failed: " + (err.message || err));
+    }
   };
-  const uploadWOReport = (woId, filename) => {
-    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, report: filename, status: "In Progress", reportUploadedBy: user?.id } : w));
-    dbUpdateWorkOrder(woId, { report: filename, status: "In Progress", reportUploadedBy: user?.id }).catch(onDbError);
+  const uploadWOReport = async (woId, file) => {
+    if (file.size > 50 * 1024 * 1024) { alert("That file is over 50MB — the current storage plan's per-file limit. Try a smaller file, or compress it first."); return; }
+    try {
+      const { url } = await uploadReportFile(file, `work-orders/${woId}`);
+      setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, report: file.name, reportUrl: url, status: "In Progress", reportUploadedBy: user?.id } : w));
+      dbUpdateWorkOrder(woId, { report: file.name, reportUrl: url, status: "In Progress", reportUploadedBy: user?.id }).catch(onDbError);
+    } catch (err) {
+      alert("Upload failed: " + (err.message || err));
+    }
   };
   const setWOStatus = (woId, status) => {
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, status } : w));

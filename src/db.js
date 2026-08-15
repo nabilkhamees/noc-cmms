@@ -66,7 +66,7 @@ export async function fetchAll() {
       id: e.id, code: e.code, name: e.name, type: e.type, roomId: e.room_id, rackId: e.rack_id,
       status: e.status, installYear: e.install_year, make: e.make, model: e.model, serial: e.serial,
       barcode: e.barcode, category: e.category, account: e.account, chargeDept: e.charge_dept,
-      notes: e.notes, location: e.location, report: e.report, reportUploadedBy: e.report_uploaded_by,
+      notes: e.notes, location: e.location, report: e.report, reportUrl: e.report_url, reportUploadedBy: e.report_uploaded_by,
       pos: e.pos_x != null && e.pos_y != null ? { x: e.pos_x, y: e.pos_y } : undefined,
       customFields: e.custom_fields || [],
       parts: (parts || []).filter((p) => p.equipment_id === e.id).map((p) => ({
@@ -84,7 +84,7 @@ export async function fetchAll() {
     description: w.description, summary: w.summary, priority: w.priority, type: w.type, assignedTo: w.assigned_to,
     status: w.status, mop: w.mop, dueDate: w.due_date, suggestedStart: w.suggested_start, report: w.report,
     instructions: w.instructions || [], estLabor: w.est_labor, actLabor: w.act_labor,
-    completedBy: w.completed_by, dateCompleted: w.date_completed, reportUploadedBy: w.report_uploaded_by,
+    completedBy: w.completed_by, dateCompleted: w.date_completed, reportUrl: w.report_url, reportUploadedBy: w.report_uploaded_by,
   }));
 
   return { sites, workOrders: workOrdersOut, users: usersOut, customTypes };
@@ -173,6 +173,7 @@ export async function dbUpdateEquipment(eqId, fields) {
   if (fields.notes !== undefined) payload.notes = fields.notes;
   if (fields.customFields !== undefined) payload.custom_fields = fields.customFields;
   if (fields.report !== undefined) payload.report = fields.report;
+  if (fields.reportUrl !== undefined) payload.report_url = fields.reportUrl;
   if (fields.reportUploadedBy !== undefined) payload.report_uploaded_by = fields.reportUploadedBy;
   if (fields.roomId !== undefined) payload.room_id = fields.roomId;
   if (fields.pos !== undefined) { payload.pos_x = fields.pos.x; payload.pos_y = fields.pos.y; }
@@ -210,6 +211,7 @@ export async function dbUpdateWorkOrder(woId, fields) {
   if (fields.completedBy !== undefined) payload.completed_by = fields.completedBy;
   if (fields.dateCompleted !== undefined) payload.date_completed = fields.dateCompleted;
   if (fields.report !== undefined) payload.report = fields.report;
+  if (fields.reportUrl !== undefined) payload.report_url = fields.reportUrl;
   if (fields.reportUploadedBy !== undefined) payload.report_uploaded_by = fields.reportUploadedBy;
   const { error } = await supabase.from("work_orders").update(payload).eq("id", woId);
   if (error) throw error;
@@ -257,6 +259,18 @@ export async function dbSetUserSites(userId, siteIds) {
     const { error: insErr } = await supabase.from("user_sites").insert(siteIds.map((siteId) => ({ user_id: userId, site_id: siteId })));
     if (insErr) throw insErr;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  File uploads (report PDFs/Word docs) — Supabase Storage             */
+/* ------------------------------------------------------------------ */
+export async function uploadReportFile(file, keyPrefix) {
+  const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  const path = `${keyPrefix}/${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage.from("reports").upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from("reports").getPublicUrl(path);
+  return { url: data.publicUrl, path };
 }
 
 /* ------------------------------------------------------------------ */
