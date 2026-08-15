@@ -105,27 +105,33 @@ adding real authentication, a natural next step after this.
 ## Email notifications
 
 When a work order is created (or reassigned to someone new), the app tries
-to email the assigned person. This requires deploying a small server-side
-piece separately from the frontend — it can't run in the browser because
-it needs a secret email-provider API key.
+to email the assigned person, sent from a dedicated Gmail account
+(`Noc.cmms@gmail.com`). This requires deploying a small server-side piece
+separately from the frontend — it can't run in the browser because it
+needs a secret password.
 
-### 1. Create a Resend account (free)
+### 1. Turn on 2-Step Verification for the Gmail account
 
-[resend.com](https://resend.com) → sign up → **API Keys** → create one,
-copy it. Resend's free tier includes a test sender address
-(`onboarding@resend.dev`) that works immediately with no domain setup —
-good enough to get notifications working today. For a professional-looking
-"from" address (e.g. `noc@yourcompany.com`), verify your own domain in
-Resend's dashboard later; no code changes needed, just update the
-`RESEND_FROM` secret in step 4.
+Sign in to `Noc.cmms@gmail.com` → [myaccount.google.com/security](https://myaccount.google.com/security)
+→ **2-Step Verification** → turn it on (needs a phone number to confirm).
+This is required before Google will let you create an App Password —
+Gmail doesn't allow plain-password SMTP login anymore.
 
-### 2. Install the Supabase CLI
+### 2. Create an App Password
+
+Same account → [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+→ create one, name it something like "NOC CMMS" → **Create**. Google shows
+a 16-character password **once** — copy it immediately (spaces don't
+matter, you can include or drop them). This is what the app uses to send
+mail — it's separate from the account's normal login password.
+
+### 3. Install the Supabase CLI
 
 ```
 npm install -g supabase
 ```
 
-### 3. Log in and link this project
+### 4. Log in and link this project
 
 ```
 supabase login
@@ -138,24 +144,31 @@ supabase link --project-ref zhuuwsekqqhsdfsauhve
 (`zhuuwsekqqhsdfsauhve` is this project's ref — the part of your Supabase
 URL before `.supabase.co`. If it differs, use yours instead.)
 
-### 4. Set the secrets and deploy the function
+### 5. Set the secrets and deploy the function
 
 ```
-supabase secrets set RESEND_API_KEY=your_resend_api_key
-supabase secrets set RESEND_FROM="NOC/CMMS <onboarding@resend.dev>"
+supabase secrets set GMAIL_USER=Noc.cmms@gmail.com
+supabase secrets set GMAIL_APP_PASSWORD=your16charapppassword
 supabase functions deploy send-work-order-email
 ```
+(paste the App Password from step 2 exactly as Google showed it, with or
+without the spaces — both work)
 
-### 5. Test it
+### 6. Test it
 
 Make sure at least one user (e.g. Ehab) has an email set in Users &
 Roles, then create a work order assigned to them from the app. Check
 their inbox (and spam folder) within a minute or two.
 
 **If email doesn't arrive:** open Supabase dashboard → **Edge Functions**
-→ `send-work-order-email` → **Logs**, to see the actual error (wrong API
-key, unverified domain, etc.). A failed or unconfigured email never
-blocks creating the work order itself — it just won't send.
+→ `send-work-order-email` → **Logs**, to see the actual error (wrong app
+password, 2-Step Verification not enabled, etc.). A failed or
+unconfigured email never blocks creating the work order itself — it just
+won't send.
+
+**Gmail's sending limit**: a regular (free) Gmail account can send up to
+about 500 emails per day — far more than a small team's work order
+notifications will ever need.
 
 ## Run it locally
 

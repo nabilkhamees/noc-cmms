@@ -1,10 +1,11 @@
-// Supabase Edge Function: sends a "you've been assigned a work order" email.
+// Supabase Edge Function: sends a "you've been assigned a work order" email
+// via Gmail SMTP, using a dedicated Gmail account (Noc.cmms@gmail.com).
 // Deployed separately from the frontend — see README.md "Email notifications"
-// section for how to deploy this and set the RESEND_API_KEY secret.
-//
-// Requires no request body validation library; kept deliberately simple.
+// section for how to deploy this and set the GMAIL_USER / GMAIL_APP_PASSWORD
+// secrets.
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,11 +28,11 @@ serve(async (req) => {
       });
     }
 
-    const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
-    const FROM = Deno.env.get("RESEND_FROM") || "NOC/CMMS <onboarding@resend.dev>";
+    const GMAIL_USER = Deno.env.get("GMAIL_USER");
+    const GMAIL_APP_PASSWORD = Deno.env.get("GMAIL_APP_PASSWORD");
 
-    if (!RESEND_API_KEY) {
-      return new Response(JSON.stringify({ error: "RESEND_API_KEY is not set on the server" }), {
+    if (!GMAIL_USER || !GMAIL_APP_PASSWORD) {
+      return new Response(JSON.stringify({ error: "GMAIL_USER / GMAIL_APP_PASSWORD are not set on the server" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -60,24 +61,30 @@ serve(async (req) => {
       </div>
     `;
 
-    const emailRes = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${RESEND_API_KEY}`,
-        "Content-Type": "application/json",
+    const client = new SMTPClient({
+      connection: {
+        hostname: "smtp.gmail.com",
+        port: 465,
+        tls: true,
+        auth: {
+          username: GMAIL_USER,
+          password: GMAIL_APP_PASSWORD,
+        },
       },
-      body: JSON.stringify({
-        from: FROM,
-        to: [to],
-        subject: `Work Order #${woCode} assigned to you`,
-        html,
-      }),
     });
 
-    const data = await emailRes.json();
+    await client.send({
+      from: `NOC/CMMS <${GMAIL_USER}>`,
+      to: [to],
+      subject: `Work Order #${woCode} assigned to you`,
+      html,
+      content: "auto",
+    });
 
-    return new Response(JSON.stringify(data), {
-      status: emailRes.status,
+    await client.close();
+
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {

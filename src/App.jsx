@@ -1300,8 +1300,9 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
   const [tab, setTab] = useState("General");
   const [draft, setDraft] = useState(null);
   const [pendingReasonText, setPendingReasonText] = useState("");
+  const [pendingReasonTouched, setPendingReasonTouched] = useState(false);
   const isMobile = useIsMobile();
-  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); setPendingReasonText(""); }, [wo?.id]);
+  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); setPendingReasonText(""); setPendingReasonTouched(false); }, [wo?.id]);
   if (!wo || !draft) return null;
   const canEdit = role === "Admin" || role === "Manager";
   const isAssignee = role === "Technician" && wo.assignedTo === currentUserId;
@@ -1411,10 +1412,16 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
                     </div>
                     <div>
                       <div style={{ fontSize: 12, fontWeight: 700, color: T.amber, marginBottom: 6 }}>Not done yet — still pending</div>
-                      <textarea value={pendingReasonText} onChange={(e) => setPendingReasonText(e.target.value)} rows={2} placeholder="Why is it still pending? e.g. waiting on parts"
-                        style={{ width: "100%", border: `1px solid ${T.line}`, borderRadius: 9, padding: "8px 10px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }} />
-                      <button onClick={() => { if (pendingReasonText.trim()) { onUpdatePending(wo.id, pendingReasonText.trim()); setPendingReasonText(""); } }}
-                        style={{ ...smallBtn, background: T.panel, color: T.ink }}>Save as pending</button>
+                      <textarea value={pendingReasonText} onChange={(e) => { setPendingReasonText(e.target.value); if (pendingReasonTouched) setPendingReasonTouched(false); }} rows={2} placeholder="Why is it still pending? e.g. waiting on parts"
+                        style={{ width: "100%", border: `1px solid ${pendingReasonTouched && !pendingReasonText.trim() ? T.red : T.line}`, borderRadius: 9, padding: "8px 10px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: pendingReasonTouched && !pendingReasonText.trim() ? 4 : 8 }} />
+                      {pendingReasonTouched && !pendingReasonText.trim() && (
+                        <div style={{ fontSize: 11, color: T.red, marginBottom: 8 }}>A reason is required to save this as pending.</div>
+                      )}
+                      <button onClick={() => {
+                        if (!pendingReasonText.trim()) { setPendingReasonTouched(true); return; }
+                        onUpdatePending(wo.id, pendingReasonText.trim());
+                        setPendingReasonText(""); setPendingReasonTouched(false);
+                      }} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Save as pending</button>
                     </div>
                   </div>
                 </div>
