@@ -85,6 +85,7 @@ export async function fetchAll() {
     status: w.status, mop: w.mop, dueDate: w.due_date, suggestedStart: w.suggested_start, report: w.report,
     instructions: w.instructions || [], estLabor: w.est_labor, actLabor: w.act_labor,
     completedBy: w.completed_by, dateCompleted: w.date_completed, reportUrl: w.report_url, reportUploadedBy: w.report_uploaded_by,
+    pendingReason: w.pending_reason,
   }));
 
   return { sites, workOrders: workOrdersOut, users: usersOut, customTypes };
@@ -213,6 +214,7 @@ export async function dbUpdateWorkOrder(woId, fields) {
   if (fields.report !== undefined) payload.report = fields.report;
   if (fields.reportUrl !== undefined) payload.report_url = fields.reportUrl;
   if (fields.reportUploadedBy !== undefined) payload.report_uploaded_by = fields.reportUploadedBy;
+  if (fields.pendingReason !== undefined) payload.pending_reason = fields.pendingReason;
   const { error } = await supabase.from("work_orders").update(payload).eq("id", woId);
   if (error) throw error;
 }

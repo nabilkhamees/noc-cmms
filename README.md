@@ -42,8 +42,28 @@ Then also run, in order:
   report uploads (PDF/Word). Before this, uploads only remembered the
   filename; after, the actual file is stored and the filename becomes a
   clickable link that opens/downloads it. 50MB per file on the free plan.
+- `supabase/migration_pending_status.sql` — adds the "Pending" status
+  and a reason field, used by the assigned person's close/pending
+  workflow on a work order (see below).
 - `supabase/seed_examples.sql` — optional: adds sample equipment and
   work orders so the app isn't empty while demoing. Safe to re-run.
+
+## What's new: Analytics drill-down, Work Order filters, and the close/pending workflow
+
+- **Analytics → Work Orders drill-down**: every number and bar on the
+  Analytics page (Overdue count, by-status, by-site, by-technician, etc.)
+  is now clickable — it jumps to the Work Orders page pre-filtered to
+  exactly those work orders, with a "Filtered by: X ✕" chip to clear it.
+- **Work Orders page filters**: three toggle buttons (All / Open /
+  Closed) next to the search box, same pattern as the Calendar's filters.
+  "Open" here means anything not yet Closed (Open, In Progress, Pending,
+  or Late all count).
+- **Close / Pending workflow**: opening a work order's **Completion**
+  tab, whoever it's assigned to (or an Admin/Manager) sees two clear
+  actions — **"Upload report & close"** (uploads the completion report
+  and marks it Closed in one step) or **"Save as pending"** (a short
+  reason, e.g. "waiting on parts", keeps it open with that note visible
+  to everyone who opens it).
 
 ### 2. Get your credentials
 

@@ -85,12 +85,13 @@ function Badge({ tone = "teal", children }) {
   );
 }
 
-function StatCard({ label, value, sub, icon: Icon, tone = "teal" }) {
+function StatCard({ label, value, sub, icon: Icon, tone = "teal", onClick }) {
   const colors = { teal: T.teal, amber: T.amber, violet: T.violet, red: T.red };
   return (
-    <div style={{
+    <div onClick={onClick} style={{
       border: `1px solid ${T.line}`, borderRadius: 14, padding: "16px 18px",
       background: T.bg, display: "flex", flexDirection: "column", gap: 6, minWidth: 0,
+      cursor: onClick ? "pointer" : "default",
     }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: T.sub, letterSpacing: 0.4, textTransform: "uppercase" }}>{label}</span>
@@ -1058,7 +1059,7 @@ const smallBtn = { border: "none", background: T.ink, color: "#fff", borderRadiu
 /* ------------------------------------------------------------------ */
 /*  Work Orders                                                        */
 /* ------------------------------------------------------------------ */
-function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, onOpen, onNewWorkOrder }) {
+function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, onOpen, onNewWorkOrder, filterToggle, onFilterToggleChange, preset, onClearPreset }) {
   const [q, setQ] = useState("");
   const fileRefs = useRef({});
   const isMobile = useIsMobile();
@@ -1066,9 +1067,12 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
   const visible = useMemo(() => {
     let list = workOrders;
     if (user.role === "Technician") list = list.filter((w) => w.assignedTo === user.id);
+    if (filterToggle === "open") list = list.filter((w) => w.status !== "Closed");
+    if (filterToggle === "closed") list = list.filter((w) => w.status === "Closed");
+    if (preset) list = list.filter((w) => w[preset.field] === preset.value);
     if (q) list = list.filter((w) => (w.description + w.equipmentName + w.code).toLowerCase().includes(q.toLowerCase()));
     return list;
-  }, [workOrders, user, q]);
+  }, [workOrders, user, q, filterToggle, preset]);
 
   const uploadBtn = (w) => (
     w.report ? (
@@ -1096,6 +1100,14 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
       <PageHeader title="Work Orders" sub={user.role === "Technician" ? "Assigned to you" : "All facilities"}
         right={
           <>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["all", "open", "closed"].map((f) => (
+                <button key={f} onClick={() => onFilterToggleChange(f)} style={{
+                  border: `1px solid ${T.line}`, borderRadius: 20, padding: "6px 13px", fontSize: 11.5, fontWeight: 700,
+                  cursor: "pointer", background: filterToggle === f ? T.ink : "#fff", color: filterToggle === f ? "#fff" : T.sub, textTransform: "capitalize",
+                }}>{f}</button>
+              ))}
+            </div>
             <div style={{ position: "relative" }}>
               <Search size={14} style={{ position: "absolute", left: 10, top: 10, color: T.sub }} />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search work orders…"
@@ -1106,6 +1118,16 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
             )}
           </>
         } />
+
+      {preset && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 12, color: T.sub }}>Filtered by:</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, border: `1px solid ${T.teal}`, background: "#E4F5F3", color: T.tealDeep, borderRadius: 20, padding: "3px 10px", fontSize: 11.5, fontWeight: 700 }}>
+            {preset.label}
+            <button onClick={onClearPreset} style={{ border: "none", background: "none", cursor: "pointer", color: T.tealDeep, display: "flex", padding: 0 }}><X size={12} /></button>
+          </span>
+        </div>
+      )}
 
       {isMobile ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1126,7 +1148,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <select value={w.status} onChange={(e) => onStatusChange(w.id, e.target.value)} style={{ ...selStyle, padding: "6px 8px", fontSize: 12, flex: 1 }}>
-                    {["Open", "In Progress", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
+                    {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
                   </select>
                   {uploadBtn(w)}
                 </div>
@@ -1154,7 +1176,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                 <div><Badge tone={w.priority === "Highest" ? "red" : "amber"}>{w.priority}</Badge></div>
                 <div>
                   <select value={w.status} onChange={(e) => onStatusChange(w.id, e.target.value)} style={{ ...selStyle, padding: "5px 8px", fontSize: 11.5 }}>
-                    {["Open", "In Progress", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
+                    {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>{uploadBtn(w)}</div>
@@ -1272,15 +1294,18 @@ function NewWorkOrderModal({ open, preset, sites, users, onClose, onCreate }) {
 
 const WO_TABS = ["General", "Completion", "Labor Tasks", "Parts", "Meter Readings", "Files", "Work Log"];
 
-function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, role }) {
+function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onCloseWithReport, onUpdatePending, role, currentUserId }) {
   const fileRef = useRef();
+  const closeFileRef = useRef();
   const [tab, setTab] = useState("General");
   const [draft, setDraft] = useState(null);
+  const [pendingReasonText, setPendingReasonText] = useState("");
   const isMobile = useIsMobile();
-  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); }, [wo?.id]);
+  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); setPendingReasonText(""); }, [wo?.id]);
   if (!wo || !draft) return null;
   const canEdit = role === "Admin" || role === "Manager";
-  const isAssignee = role === "Technician";
+  const isAssignee = role === "Technician" && wo.assignedTo === currentUserId;
+  const canAct = canEdit || isAssignee;
   const field = (key, val) => setDraft((d) => ({ ...d, [key]: val }));
   const site = sites.find((s) => s.id === wo.siteId);
   const equipment = site?.equipment.find((e) => e.id === wo.equipmentId);
@@ -1292,7 +1317,7 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
         <div style={{ padding: "18px 26px", borderBottom: `1px solid ${T.line}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div style={{ fontSize: 14.5, fontWeight: 800, color: T.ink }}>WO {wo.code}</div>
           <div style={{ display: "flex", gap: 8 }}>
-            {(canEdit || isAssignee) && <button onClick={() => onSave(wo.id, draft)} style={smallBtn}><Save size={12} style={{ marginRight: 4 }} />Save</button>}
+            {(canAct) && <button onClick={() => onSave(wo.id, draft)} style={smallBtn}><Save size={12} style={{ marginRight: 4 }} />Save</button>}
             <button onClick={onClose} style={iconBtn}><X size={18} /></button>
           </div>
         </div>
@@ -1311,8 +1336,8 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
               <FieldRow label="Asset" value={equipment?.name} disabled />
               <div>
                 <div style={labelStyle}>Work order status</div>
-                <select value={draft.status} disabled={!canEdit && !isAssignee} onChange={(e) => field("status", e.target.value)} style={{ ...selStyle, width: "100%" }}>
-                  {["Open", "In Progress", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
+                <select value={draft.status} disabled={!canAct} onChange={(e) => field("status", e.target.value)} style={{ ...selStyle, width: "100%" }}>
+                  {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -1365,24 +1390,52 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, rol
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, marginBottom: 14 }}>{assignee?.name}</div>
                   <FieldRow label="Estimated labor" value={draft.estLabor} onChange={(v) => field("estLabor", v)} disabled={!canEdit} />
                   <div style={{ height: 10 }} />
-                  <FieldRow label="Actual labor" value={draft.actLabor} onChange={(v) => field("actLabor", v)} disabled={!canEdit && !isAssignee} />
+                  <FieldRow label="Actual labor" value={draft.actLabor} onChange={(v) => field("actLabor", v)} disabled={!canAct} />
                 </div>
               </div>
             </>
           )}
 
           {tab === "Completion" && (
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-              <FieldRow label="Completed by" value={draft.completedBy} onChange={(v) => field("completedBy", v)} disabled={!isAssignee && !canEdit} />
-              <FieldRow label="Date completed" value={draft.dateCompleted} onChange={(v) => field("dateCompleted", v)} disabled={!isAssignee && !canEdit} />
-            </div>
+            <>
+              {wo.status !== "Closed" && canAct && (
+                <div style={{ border: `1.5px solid ${T.ink}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 10 }}>What's the status of this work order?</div>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.teal, marginBottom: 6 }}>Done — close it out</div>
+                      <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 8 }}>Upload the completion report to close this work order.</div>
+                      <input ref={closeFileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
+                        onChange={(e) => e.target.files[0] && onCloseWithReport(wo.id, e.target.files[0])} />
+                      <button onClick={() => closeFileRef.current.click()} style={smallBtn}><Upload size={12} style={{ marginRight: 4 }} />Upload report & close</button>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: T.amber, marginBottom: 6 }}>Not done yet — still pending</div>
+                      <textarea value={pendingReasonText} onChange={(e) => setPendingReasonText(e.target.value)} rows={2} placeholder="Why is it still pending? e.g. waiting on parts"
+                        style={{ width: "100%", border: `1px solid ${T.line}`, borderRadius: 9, padding: "8px 10px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: 8 }} />
+                      <button onClick={() => { if (pendingReasonText.trim()) { onUpdatePending(wo.id, pendingReasonText.trim()); setPendingReasonText(""); } }}
+                        style={{ ...smallBtn, background: T.panel, color: T.ink }}>Save as pending</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {wo.status === "Pending" && wo.pendingReason && (
+                <div style={{ background: "#FDF1DF", border: `1px solid ${T.amber}`, borderRadius: 10, padding: "10px 12px", marginBottom: 16, fontSize: 12.5, color: "#93590B" }}>
+                  <strong>Pending:</strong> {wo.pendingReason}
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+                <FieldRow label="Completed by" value={draft.completedBy} onChange={(v) => field("completedBy", v)} disabled={!canAct} />
+                <FieldRow label="Date completed" value={draft.dateCompleted} onChange={(v) => field("dateCompleted", v)} disabled={!canAct} />
+              </div>
+            </>
           )}
 
           {tab === "Labor Tasks" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {wo.instructions.map((step, i) => (
                 <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: T.ink, border: `1px solid ${T.line}`, borderRadius: 8, padding: "8px 10px" }}>
-                  <input type="checkbox" disabled={!isAssignee && !canEdit} />{step}
+                  <input type="checkbox" disabled={!canAct} />{step}
                 </label>
               ))}
             </div>
@@ -1752,10 +1805,10 @@ function MiniMonth({ cursor, setCursor, weekStart, setWeekStart }) {
 /* ------------------------------------------------------------------ */
 /*  Analytics — fleet-wide maintenance and capacity insights           */
 /* ------------------------------------------------------------------ */
-function BarRow({ label, value, max, tone = T.teal, suffix = "" }) {
+function BarRow({ label, value, max, tone = T.teal, suffix = "", onClick }) {
   const pct = max > 0 ? Math.round((value / max) * 100) : 0;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+    <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 10, cursor: onClick ? "pointer" : "default", padding: onClick ? "3px 4px" : 0, margin: onClick ? "-3px -4px" : 0, borderRadius: 6 }}>
       <div style={{ width: 120, fontSize: 12, color: T.ink, fontWeight: 600, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</div>
       <div style={{ flex: 1, height: 8, borderRadius: 5, background: T.panel, overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${pct}%`, background: tone, borderRadius: 5, minWidth: value > 0 ? 4 : 0 }} />
@@ -1777,7 +1830,7 @@ function AnalyticsPanel({ title, icon: Icon, children }) {
   );
 }
 
-function Analytics({ sites, workOrders, users }) {
+function Analytics({ sites, workOrders, users, onDrillDown }) {
   const isMobile = useIsMobile();
   const siteIds = new Set(sites.map((s) => s.id));
   const wos = workOrders.filter((w) => siteIds.has(w.siteId));
@@ -1795,15 +1848,14 @@ function Analytics({ sites, workOrders, users }) {
     wos.forEach((w) => { const v = w[key]; if (v != null) counts[v] = (counts[v] || 0) + 1; });
     return counts;
   };
-  const byStatus = countBy("status", ["Open", "In Progress", "Late", "Closed"]);
+  const byStatus = countBy("status", ["Open", "In Progress", "Pending", "Late", "Closed"]);
   const byType = countBy("type", ["Preventive", "Corrective", "Other"]);
   const byPriority = countBy("priority", ["Low", "High", "Highest"]);
 
-  const bySite = {};
-  sites.forEach((s) => (bySite[s.name] = wos.filter((w) => w.siteId === s.id).length));
-
-  const byTech = {};
-  users.forEach((u) => { const c = wos.filter((w) => w.assignedTo === u.id).length; if (c > 0) byTech[u.name] = c; });
+  // Keep the id alongside the label so bars can drill down precisely
+  // (two sites or two technicians could share a similar-looking name).
+  const bySite = sites.map((s) => ({ id: s.id, label: s.name, count: wos.filter((w) => w.siteId === s.id).length }));
+  const byTech = users.map((u) => ({ id: u.id, label: u.name, count: wos.filter((w) => w.assignedTo === u.id).length })).filter((t) => t.count > 0);
 
   const equipmentTotal = sites.reduce((a, s) => a + s.equipment.length, 0);
   const equipmentOffline = sites.reduce((a, s) => a + s.equipment.filter((e) => e.status === "Offline").length, 0);
@@ -1821,41 +1873,47 @@ function Analytics({ sites, workOrders, users }) {
   const maxStatus = Math.max(1, ...Object.values(byStatus));
   const maxType = Math.max(1, ...Object.values(byType));
   const maxPriority = Math.max(1, ...Object.values(byPriority));
-  const maxSite = Math.max(1, ...Object.values(bySite));
-  const maxTech = Math.max(1, ...Object.values(byTech), 1);
+  const maxSite = Math.max(1, ...bySite.map((s) => s.count));
+  const maxTech = Math.max(1, ...byTech.map((t) => t.count), 1);
 
-  const statusTone = { Open: T.teal, "In Progress": T.violet, Late: T.red, Closed: T.sub };
+  const statusTone = { Open: T.teal, "In Progress": T.violet, Pending: T.amber, Late: T.red, Closed: T.sub };
+
+  const drillStatus = (status) => onDrillDown({ toggle: "all", preset: { field: "status", value: status, label: status } });
+  const drillType = (type) => onDrillDown({ toggle: "all", preset: { field: "type", value: type, label: type } });
+  const drillPriority = (p) => onDrillDown({ toggle: "all", preset: { field: "priority", value: p, label: p + " priority" } });
+  const drillSite = (s) => onDrillDown({ toggle: "all", preset: { field: "siteId", value: s.id, label: s.label } });
+  const drillTech = (t) => onDrillDown({ toggle: "all", preset: { field: "assignedTo", value: t.id, label: t.label } });
 
   return (
     <div>
-      <PageHeader title="Analytics" sub="Fleet-wide maintenance and capacity insights" />
+      <PageHeader title="Analytics" sub="Fleet-wide maintenance and capacity insights — click any number to see those work orders" />
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2,1fr)" : "repeat(5,1fr)", gap: 12, marginBottom: 22 }}>
-        <StatCard label="Total work orders" value={total} icon={ClipboardList} tone="teal" />
-        <StatCard label="Open" value={open} icon={Wrench} tone="amber" />
-        <StatCard label="Overdue" value={late} icon={AlertTriangle} tone="red" />
-        <StatCard label="Closed" value={closed} icon={CheckCircle2} tone="violet" />
-        <StatCard label="PM compliance" value={pmCompliance == null ? "—" : `${pmCompliance}%`} sub={preventive.length ? `${preventive.length} preventive WOs` : "No preventive WOs yet"} icon={Gauge} tone={pmCompliance == null ? "teal" : pmCompliance >= 80 ? "teal" : pmCompliance >= 50 ? "amber" : "red"} />
+        <StatCard label="Total work orders" value={total} icon={ClipboardList} tone="teal" onClick={() => onDrillDown({ toggle: "all" })} />
+        <StatCard label="Open" value={open} icon={Wrench} tone="amber" onClick={() => onDrillDown({ toggle: "open" })} />
+        <StatCard label="Overdue" value={late} icon={AlertTriangle} tone="red" onClick={() => drillStatus("Late")} />
+        <StatCard label="Closed" value={closed} icon={CheckCircle2} tone="violet" onClick={() => onDrillDown({ toggle: "closed" })} />
+        <StatCard label="PM compliance" value={pmCompliance == null ? "—" : `${pmCompliance}%`} sub={preventive.length ? `${preventive.length} preventive WOs` : "No preventive WOs yet"} icon={Gauge} tone={pmCompliance == null ? "teal" : pmCompliance >= 80 ? "teal" : pmCompliance >= 50 ? "amber" : "red"} onClick={() => drillType("Preventive")} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
         <AnalyticsPanel title="Work orders by status" icon={ClipboardList}>
-          {Object.entries(byStatus).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxStatus} tone={statusTone[k]} />)}
+          {Object.entries(byStatus).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxStatus} tone={statusTone[k]} onClick={() => drillStatus(k)} />)}
         </AnalyticsPanel>
         <AnalyticsPanel title="Work orders by type" icon={Wrench}>
-          {Object.entries(byType).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxType} tone={k === "Corrective" ? T.amber : k === "Preventive" ? T.teal : T.violet} />)}
+          {Object.entries(byType).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxType} tone={k === "Corrective" ? T.amber : k === "Preventive" ? T.teal : T.violet} onClick={() => drillType(k)} />)}
           <div style={{ height: 1, background: T.line, margin: "4px 0" }} />
-          {Object.entries(byPriority).map(([k, v]) => <BarRow key={k} label={k + " priority"} value={v} max={maxPriority} tone={k === "Highest" ? T.red : k === "High" ? T.amber : T.teal} />)}
+          {Object.entries(byPriority).map(([k, v]) => <BarRow key={k} label={k + " priority"} value={v} max={maxPriority} tone={k === "Highest" ? T.red : k === "High" ? T.amber : T.teal} onClick={() => drillPriority(k)} />)}
         </AnalyticsPanel>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
         <AnalyticsPanel title="Work orders by site" icon={Building2}>
-          {Object.entries(bySite).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxSite} tone={T.teal} />)}
+          {bySite.map((s) => <BarRow key={s.id} label={s.label} value={s.count} max={maxSite} tone={T.teal} onClick={() => drillSite(s)} />)}
         </AnalyticsPanel>
         <AnalyticsPanel title="Technician workload" icon={Users}>
-          {Object.keys(byTech).length === 0 && <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic" }}>No work orders assigned yet.</div>}
-          {Object.entries(byTech).sort((a, b) => b[1] - a[1]).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxTech} tone={T.violet} />)}
+          {byTech.length === 0 && <div style={{ fontSize: 12, color: T.sub, fontStyle: "italic" }}>No work orders assigned yet.</div>}
+          {byTech.sort((a, b) => b.count - a.count).map((t) => <BarRow key={t.id} label={t.label} value={t.count} max={maxTech} tone={T.violet} onClick={() => drillTech(t)} />)}
         </AnalyticsPanel>
       </div>
 
@@ -1993,6 +2051,13 @@ export default function App() {
   const [openEqId, setOpenEqId] = useState(null);
   const [openWoId, setOpenWoId] = useState(null);
   const [newWODraft, setNewWODraft] = useState(null); // null = closed, object = open with optional preset
+  const [woFilterToggle, setWoFilterToggle] = useState("all"); // "all" | "open" | "closed"
+  const [woPreset, setWoPreset] = useState(null); // { field, value, label } — set by Analytics drill-down
+  const goToWorkOrders = (spec) => {
+    setWoFilterToggle(spec?.toggle || "all");
+    setWoPreset(spec?.preset || null);
+    setPage("workorders");
+  };
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const isMobile = useWindowIsMobile();
@@ -2068,6 +2133,27 @@ export default function App() {
     } catch (err) {
       alert("Upload failed: " + (err.message || err));
     }
+  };
+  // The two actions available to whoever a work order is assigned to:
+  // close it out (requires a completion report), or mark it still
+  // pending with a reason so it's clear why it hasn't closed yet.
+  const closeWorkOrderWithReport = async (woId, file) => {
+    if (file.size > 50 * 1024 * 1024) { alert("That file is over 50MB — the current storage plan's per-file limit. Try a smaller file, or compress it first."); return; }
+    try {
+      const { url } = await uploadReportFile(file, `work-orders/${woId}`);
+      const completedBy = user?.name || "";
+      const dateCompleted = new Date().toISOString().slice(0, 10);
+      const fields = { report: file.name, reportUrl: url, reportUploadedBy: user?.id, status: "Closed", completedBy, dateCompleted, pendingReason: null };
+      setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...fields } : w));
+      dbUpdateWorkOrder(woId, fields).catch(onDbError);
+    } catch (err) {
+      alert("Upload failed: " + (err.message || err));
+    }
+  };
+  const updateWorkOrderPending = (woId, reason) => {
+    const fields = { status: "Pending", pendingReason: reason };
+    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...fields } : w));
+    dbUpdateWorkOrder(woId, fields).catch(onDbError);
   };
   const setWOStatus = (woId, status) => {
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, status } : w));
@@ -2298,9 +2384,10 @@ export default function App() {
           {page === "dashboard" && <SitesDashboard sites={visibleSitesFor(user, sites)} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
           {page === "assets" && <AssetTree sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} onAddFloor={addFloor} onDeleteFloor={deleteFloor} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
-          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})} />}
+          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})}
+            filterToggle={woFilterToggle} onFilterToggleChange={setWoFilterToggle} preset={woPreset} onClearPreset={() => setWoPreset(null)} />}
           {page === "analytics" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
-            <Analytics sites={visibleSitesFor(user, sites)} workOrders={workOrders} users={users} />
+            <Analytics sites={visibleSitesFor(user, sites)} workOrders={workOrders} users={users} onDrillDown={goToWorkOrders} />
           </PermGate>}
           {page === "roomdesigner" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
             <RoomDesigner sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} addRoom={addRoom} onDeleteRoom={deleteRoom} placeEquipment={placeEquipment} />
@@ -2315,7 +2402,7 @@ export default function App() {
             const ownerSite = sites.find((s) => s.equipment.some((e) => e.id === openEquipment.id));
             setNewWODraft({ siteId: ownerSite?.id, equipmentId: openEquipment.id, equipmentName: openEquipment.name });
           }} />
-        <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} role={user.role} />
+        <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} role={user.role} currentUserId={user.id} />
         <NewWorkOrderModal open={!!newWODraft} preset={newWODraft} sites={visibleSitesFor(user, sites)} users={users} onClose={() => setNewWODraft(null)} onCreate={addWorkOrder} />
       </div>
     </MobileCtx.Provider>
