@@ -1059,7 +1059,7 @@ const smallBtn = { border: "none", background: T.ink, color: "#fff", borderRadiu
 /* ------------------------------------------------------------------ */
 /*  Work Orders                                                        */
 /* ------------------------------------------------------------------ */
-function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, onOpen, onNewWorkOrder, filterToggle, onFilterToggleChange, preset, onClearPreset }) {
+function WorkOrders({ workOrders, users, user, onUploadReport, onOpen, onNewWorkOrder, filterToggle, onFilterToggleChange, preset, onClearPreset, onOpenAction }) {
   const [q, setQ] = useState("");
   const fileRefs = useRef({});
   const isMobile = useIsMobile();
@@ -1147,9 +1147,8 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                   <span style={{ fontSize: 12, color: T.sub, alignSelf: "center" }}>{assignee?.name}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <select value={w.status} onChange={(e) => onStatusChange(w.id, e.target.value)} style={{ ...selStyle, padding: "6px 8px", fontSize: 12, flex: 1 }}>
-                    {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
-                  </select>
+                  <Badge tone={statusBadgeTone(w.status)}>{w.status}</Badge>
+                  <button onClick={() => onOpenAction(w.id)} style={{ ...smallBtn, background: T.ink, color: "#fff" }}>Action</button>
                   {uploadBtn(w)}
                 </div>
               </div>
@@ -1160,7 +1159,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
       ) : (
         <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ ...rowGrid, background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase", letterSpacing: 0.3 }}>
-            <div>Code</div><div>Description</div><div>Type</div><div>Assigned</div><div>Priority</div><div>Status</div><div>Report</div>
+            <div>Code</div><div>Description</div><div>Type</div><div>Assigned</div><div>Priority</div><div>Status</div><div></div><div>Report</div>
           </div>
           {visible.map((w) => {
             const assignee = users.find((u) => u.id === w.assignedTo);
@@ -1174,11 +1173,8 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                 <div><Badge tone={w.type === "Corrective" ? "amber" : "teal"}>{w.type}</Badge></div>
                 <div style={{ fontSize: 12.5, color: T.ink }}>{assignee?.name}</div>
                 <div><Badge tone={w.priority === "Highest" ? "red" : "amber"}>{w.priority}</Badge></div>
-                <div>
-                  <select value={w.status} onChange={(e) => onStatusChange(w.id, e.target.value)} style={{ ...selStyle, padding: "5px 8px", fontSize: 11.5 }}>
-                    {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
+                <div><Badge tone={statusBadgeTone(w.status)}>{w.status}</Badge></div>
+                <div><button onClick={() => onOpenAction(w.id)} style={{ ...smallBtn, background: T.ink, color: "#fff" }}>Action</button></div>
                 <div>{uploadBtn(w)}</div>
               </div>
             );
@@ -1189,7 +1185,8 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
     </div>
   );
 }
-const rowGrid = { display: "grid", gridTemplateColumns: "70px 2fr 100px 130px 90px 130px 130px", gap: 10, alignItems: "center", padding: "11px 16px", borderTop: `1px solid ${T.line}` };
+const statusBadgeTone = (s) => s === "Late" ? "red" : s === "Closed" ? "gray" : s === "Pending" ? "amber" : s === "In Progress" ? "violet" : "teal";
+const rowGrid = { display: "grid", gridTemplateColumns: "60px 1.8fr 90px 110px 80px 90px 80px 120px", gap: 10, alignItems: "center", padding: "11px 16px", borderTop: `1px solid ${T.line}` };
 
 /* ------------------------------------------------------------------ */
 /*  Work Order Administration modal — mirrors the Fiix WO screen       */
@@ -1294,15 +1291,110 @@ function NewWorkOrderModal({ open, preset, sites, users, onClose, onCreate }) {
 
 const WO_TABS = ["General", "Completion", "Labor Tasks", "Parts", "Meter Readings", "Files", "Work Log"];
 
-function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onCloseWithReport, onUpdatePending, role, currentUserId }) {
+/* ------------------------------------------------------------------ */
+/*  Action Terminal — the assignee's (or Admin/Manager's) one place to  */
+/*  close a work order with a report, mark it pending with a reason,   */
+/*  or (Admin/Manager only) manually override the status                */
+/* ------------------------------------------------------------------ */
+const statusHex = { Open: "#0E9C8F", "In Progress": "#6D5DD3", Pending: "#D97706", Late: "#DC4C4C", Closed: "#8B98A5" };
+
+function ActionTerminal({ wo, users, onClose, onCloseWithReport, onUpdatePending, onManualStatus, role, currentUserId }) {
+  const isMobile = useIsMobile();
+  const [reason, setReason] = useState("");
+  const [reasonTouched, setReasonTouched] = useState(false);
   const fileRef = useRef();
-  const closeFileRef = useRef();
+  React.useEffect(() => { setReason(""); setReasonTouched(false); }, [wo?.id]);
+  if (!wo) return null;
+
+  const canEdit = role === "Admin" || role === "Manager";
+  const isAssignee = role === "Technician" && wo.assignedTo === currentUserId;
+  const canAct = canEdit || isAssignee;
+  const assignee = users.find((u) => u.id === wo.assignedTo);
+
+  const termBtn = { background: "#132038", border: "1px solid #24344F", color: "#D7E2EA", borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" };
+  const promptLine = { display: "flex", gap: 7, marginBottom: 2 };
+
+  const submitPending = () => {
+    if (!reason.trim()) { setReasonTouched(true); return; }
+    onUpdatePending(wo.id, reason.trim());
+    onClose();
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: isMobile ? 0 : 20 }} onClick={onClose}>
+      <div style={{
+        background: "#0B1220", color: "#D7E2EA", fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace",
+        borderRadius: isMobile ? 0 : 14, width: isMobile ? "100%" : 480, maxWidth: 480, height: isMobile ? "100vh" : "auto",
+        maxHeight: isMobile ? "100vh" : "85vh", overflowY: "auto", border: "1px solid #1E293B",
+      }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", background: "#111827", borderBottom: "1px solid #1E293B", position: "sticky", top: 0 }}>
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#DC4C4C", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#D97706", display: "inline-block" }} />
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#0E9C8F", display: "inline-block" }} />
+          <span style={{ marginLeft: 8, fontSize: 12, color: "#8B98A5" }}>wo-{wo.code}@noc-cmms:~</span>
+          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "#8B98A5", cursor: "pointer", display: "flex" }}><X size={15} /></button>
+        </div>
+
+        <div style={{ padding: 18, fontSize: 12.5, lineHeight: 1.8 }}>
+          <div style={promptLine}><span style={{ color: "#0E9C8F" }}>$</span><span>status --show</span></div>
+          <div style={{ marginLeft: 16, marginBottom: 14 }}>
+            WO #{wo.code} · <span style={{ color: statusHex[wo.status] || "#8B98A5", fontWeight: 700 }}>{wo.status}</span>
+            <div style={{ color: "#5B6472", fontSize: 11.5, marginTop: 3 }}>assigned to {assignee?.name || "—"}</div>
+            {wo.pendingReason && <div style={{ color: "#D97706", fontSize: 11.5, marginTop: 3 }}>pending reason: "{wo.pendingReason}"</div>}
+            {wo.status === "Closed" && <div style={{ color: "#0E9C8F", fontSize: 11.5, marginTop: 3 }}>closed{wo.completedBy ? ` by ${wo.completedBy}` : ""}{wo.dateCompleted ? ` on ${wo.dateCompleted}` : ""}</div>}
+          </div>
+
+          {wo.status !== "Closed" && canAct && (
+            <>
+              <div style={promptLine}><span style={{ color: "#0E9C8F" }}>$</span><span>action --close</span></div>
+              <div style={{ marginLeft: 16, marginBottom: 16 }}>
+                <div style={{ color: "#5B6472", fontSize: 11.5, marginBottom: 6 }}>Upload the completion report to close this work order.</div>
+                <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
+                  onChange={(e) => { if (e.target.files[0]) { onCloseWithReport(wo.id, e.target.files[0]); onClose(); } }} />
+                <button onClick={() => fileRef.current.click()} style={termBtn}>upload report &amp; close</button>
+              </div>
+
+              <div style={promptLine}><span style={{ color: "#D97706" }}>$</span><span>action --pending</span></div>
+              <div style={{ marginLeft: 16, marginBottom: 16 }}>
+                <div style={{ color: "#5B6472", fontSize: 11.5, marginBottom: 6 }}>Not done yet? Say why — a reason is required.</div>
+                <textarea value={reason} onChange={(e) => { setReason(e.target.value); if (reasonTouched) setReasonTouched(false); }} rows={2}
+                  placeholder="e.g. waiting on parts…"
+                  style={{ width: "100%", background: "#0B1220", border: `1px solid ${reasonTouched && !reason.trim() ? "#DC4C4C" : "#1E293B"}`, borderRadius: 6, padding: "8px 10px", color: "#D7E2EA", fontFamily: "inherit", fontSize: 12.5, resize: "vertical", marginBottom: 6 }} />
+                {reasonTouched && !reason.trim() && <div style={{ color: "#DC4C4C", fontSize: 11, marginBottom: 6 }}>reason required — cannot save pending without one</div>}
+                <button onClick={submitPending} style={termBtn}>save as pending</button>
+              </div>
+            </>
+          )}
+
+          {canEdit && (
+            <>
+              <div style={promptLine}><span style={{ color: "#8B98A5" }}>$</span><span>status --override</span></div>
+              <div style={{ marginLeft: 16, marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <select defaultValue="" onChange={(e) => { if (e.target.value) { onManualStatus(wo.id, e.target.value); onClose(); } }}
+                  style={{ background: "#132038", border: "1px solid #24344F", color: "#D7E2EA", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }}>
+                  <option value="">— set status manually —</option>
+                  {["Open", "In Progress", "Pending", "Late", "Closed"].filter((s) => s !== wo.status).map((s) => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <span style={{ fontSize: 10.5, color: "#5B6472" }}>admin override — skips the upload/reason requirement</span>
+              </div>
+            </>
+          )}
+
+          {!canAct && wo.status !== "Closed" && (
+            <div style={{ color: "#5B6472", fontSize: 11.5, marginTop: 4 }}># only the assigned technician or an Admin/Manager can act on this work order</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onCloseWithReport, onUpdatePending, onOpenAction, role, currentUserId }) {
+  const fileRef = useRef();
   const [tab, setTab] = useState("General");
   const [draft, setDraft] = useState(null);
-  const [pendingReasonText, setPendingReasonText] = useState("");
-  const [pendingReasonTouched, setPendingReasonTouched] = useState(false);
   const isMobile = useIsMobile();
-  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); setPendingReasonText(""); setPendingReasonTouched(false); }, [wo?.id]);
+  React.useEffect(() => { setDraft(wo ? { ...wo } : null); setTab("General"); }, [wo?.id]);
   if (!wo || !draft) return null;
   const canEdit = role === "Admin" || role === "Manager";
   const isAssignee = role === "Technician" && wo.assignedTo === currentUserId;
@@ -1337,9 +1429,10 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
               <FieldRow label="Asset" value={equipment?.name} disabled />
               <div>
                 <div style={labelStyle}>Work order status</div>
-                <select value={draft.status} disabled={!canAct} onChange={(e) => field("status", e.target.value)} style={{ ...selStyle, width: "100%" }}>
-                  {["Open", "In Progress", "Pending", "Late", "Closed"].map((s) => <option key={s}>{s}</option>)}
-                </select>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, height: 34 }}>
+                  <Badge tone={statusBadgeTone(wo.status)}>{wo.status}</Badge>
+                  {canAct && <button onClick={() => onOpenAction(wo.id)} style={{ ...smallBtn, background: T.panel, color: T.ink, padding: "5px 10px", fontSize: 11 }}>Action</button>}
+                </div>
               </div>
               <div>
                 <div style={labelStyle}>Maintenance type</div>
@@ -1400,30 +1493,9 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
           {tab === "Completion" && (
             <>
               {wo.status !== "Closed" && canAct && (
-                <div style={{ border: `1.5px solid ${T.ink}`, borderRadius: 12, padding: 16, marginBottom: 16 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 800, color: T.ink, marginBottom: 10 }}>What's the status of this work order?</div>
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.teal, marginBottom: 6 }}>Done — close it out</div>
-                      <div style={{ fontSize: 11.5, color: T.sub, marginBottom: 8 }}>Upload the completion report to close this work order.</div>
-                      <input ref={closeFileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
-                        onChange={(e) => e.target.files[0] && onCloseWithReport(wo.id, e.target.files[0])} />
-                      <button onClick={() => closeFileRef.current.click()} style={smallBtn}><Upload size={12} style={{ marginRight: 4 }} />Upload report & close</button>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: T.amber, marginBottom: 6 }}>Not done yet — still pending</div>
-                      <textarea value={pendingReasonText} onChange={(e) => { setPendingReasonText(e.target.value); if (pendingReasonTouched) setPendingReasonTouched(false); }} rows={2} placeholder="Why is it still pending? e.g. waiting on parts"
-                        style={{ width: "100%", border: `1px solid ${pendingReasonTouched && !pendingReasonText.trim() ? T.red : T.line}`, borderRadius: 9, padding: "8px 10px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit", marginBottom: pendingReasonTouched && !pendingReasonText.trim() ? 4 : 8 }} />
-                      {pendingReasonTouched && !pendingReasonText.trim() && (
-                        <div style={{ fontSize: 11, color: T.red, marginBottom: 8 }}>A reason is required to save this as pending.</div>
-                      )}
-                      <button onClick={() => {
-                        if (!pendingReasonText.trim()) { setPendingReasonTouched(true); return; }
-                        onUpdatePending(wo.id, pendingReasonText.trim());
-                        setPendingReasonText(""); setPendingReasonTouched(false);
-                      }} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Save as pending</button>
-                    </div>
-                  </div>
+                <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, marginBottom: 16, display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ fontSize: 12.5, color: T.sub }}>Close this work order or mark it pending from the Action terminal.</div>
+                  <button onClick={() => onOpenAction(wo.id)} style={{ ...smallBtn, marginLeft: "auto" }}>Action</button>
                 </div>
               )}
               {wo.status === "Pending" && wo.pendingReason && (
@@ -1432,8 +1504,8 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
                 </div>
               )}
               <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
-                <FieldRow label="Completed by" value={draft.completedBy} onChange={(v) => field("completedBy", v)} disabled={!canAct} />
-                <FieldRow label="Date completed" value={draft.dateCompleted} onChange={(v) => field("dateCompleted", v)} disabled={!canAct} />
+                <FieldRow label="Completed by" value={draft.completedBy} disabled mono />
+                <FieldRow label="Date completed" value={draft.dateCompleted} disabled mono />
               </div>
             </>
           )}
@@ -2058,6 +2130,7 @@ export default function App() {
   const [openEqId, setOpenEqId] = useState(null);
   const [openWoId, setOpenWoId] = useState(null);
   const [newWODraft, setNewWODraft] = useState(null); // null = closed, object = open with optional preset
+  const [actionWoId, setActionWoId] = useState(null);
   const [woFilterToggle, setWoFilterToggle] = useState("all"); // "all" | "open" | "closed"
   const [woPreset, setWoPreset] = useState(null); // { field, value, label } — set by Analytics drill-down
   const goToWorkOrders = (spec) => {
@@ -2391,8 +2464,8 @@ export default function App() {
           {page === "dashboard" && <SitesDashboard sites={visibleSitesFor(user, sites)} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
           {page === "assets" && <AssetTree sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} onAddFloor={addFloor} onDeleteFloor={deleteFloor} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
-          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onStatusChange={setWOStatus} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})}
-            filterToggle={woFilterToggle} onFilterToggleChange={setWoFilterToggle} preset={woPreset} onClearPreset={() => setWoPreset(null)} />}
+          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})}
+            filterToggle={woFilterToggle} onFilterToggleChange={setWoFilterToggle} preset={woPreset} onClearPreset={() => setWoPreset(null)} onOpenAction={setActionWoId} />}
           {page === "analytics" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
             <Analytics sites={visibleSitesFor(user, sites)} workOrders={workOrders} users={users} onDrillDown={goToWorkOrders} />
           </PermGate>}
@@ -2409,7 +2482,8 @@ export default function App() {
             const ownerSite = sites.find((s) => s.equipment.some((e) => e.id === openEquipment.id));
             setNewWODraft({ siteId: ownerSite?.id, equipmentId: openEquipment.id, equipmentName: openEquipment.name });
           }} />
-        <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} role={user.role} currentUserId={user.id} />
+        <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} onOpenAction={setActionWoId} role={user.role} currentUserId={user.id} />
+        <ActionTerminal wo={workOrders.find((w) => w.id === actionWoId)} users={users} onClose={() => setActionWoId(null)} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} onManualStatus={setWOStatus} role={user.role} currentUserId={user.id} />
         <NewWorkOrderModal open={!!newWODraft} preset={newWODraft} sites={visibleSitesFor(user, sites)} users={users} onClose={() => setNewWODraft(null)} onCreate={addWorkOrder} />
       </div>
     </MobileCtx.Provider>
