@@ -1138,7 +1138,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <button onClick={() => onOpen(w.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{w.description}</div>
-                    <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>#{w.code} · {w.equipmentId.toUpperCase()}</div>
+                    <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>#{w.code} · {w.equipmentId ? w.equipmentId.toUpperCase() : "General"}</div>
                   </button>
                   <Badge tone={w.priority === "Highest" ? "red" : "amber"}>{w.priority}</Badge>
                 </div>
@@ -1169,7 +1169,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onStatusChange, o
                 <button onClick={() => onOpen(w.id)} style={{ ...mono, fontSize: 12.5, color: T.teal, fontWeight: 700, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>#{w.code}</button>
                 <button onClick={() => onOpen(w.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{w.description}</div>
-                  <div style={{ fontSize: 11, color: T.sub, ...mono }}>{w.equipmentId.toUpperCase()}</div>
+                  <div style={{ fontSize: 11, color: T.sub, ...mono }}>{w.equipmentId ? w.equipmentId.toUpperCase() : "General"}</div>
                 </button>
                 <div><Badge tone={w.type === "Corrective" ? "amber" : "teal"}>{w.type}</Badge></div>
                 <div style={{ fontSize: 12.5, color: T.ink }}>{assignee?.name}</div>
