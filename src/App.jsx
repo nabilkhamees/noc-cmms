@@ -50,6 +50,10 @@ const mono = { fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace
 /* ------------------------------------------------------------------ */
 const ROLES = ["Admin", "Manager", "Technician"];
 const BUILTIN_EQUIPMENT_TYPES = ["Generator", "UPS", "Cooling", "Rack PDU", "Switch", "Panel Board", "Rectifier", "Equipment"];
+const WO_TYPES = ["Preventive", "Corrective", "Inspection", "Upgrade", "Damage", "Other"];
+const typeBadgeTone = (t) => ({ Preventive: "teal", Corrective: "red", Inspection: "violet", Upgrade: "teal", Damage: "amber", Other: "gray" }[t] || "gray");
+const typeHex = (t) => ({ Preventive: T.teal, Corrective: T.red, Inspection: T.violet, Upgrade: T.teal, Damage: T.amber, Other: T.sub }[t] || T.sub);
+const toneHex = { teal: T.teal, amber: T.amber, red: T.red, violet: T.violet, gray: T.sub };
 
 // Which sites a given user should see: Admins always see everything;
 // everyone else sees only their assigned sites — but if they haven't
@@ -1059,7 +1063,7 @@ const smallBtn = { border: "none", background: T.ink, color: "#fff", borderRadiu
 /* ------------------------------------------------------------------ */
 /*  Work Orders                                                        */
 /* ------------------------------------------------------------------ */
-function WorkOrders({ workOrders, users, user, onUploadReport, onOpen, onNewWorkOrder, filterToggle, onFilterToggleChange, preset, onClearPreset, onOpenAction }) {
+function WorkOrders({ workOrders, users, sites, user, onUploadReport, onOpen, onNewWorkOrder, filterToggle, onFilterToggleChange, preset, onClearPreset, onOpenAction }) {
   const [q, setQ] = useState("");
   const fileRefs = useRef({});
   const isMobile = useIsMobile();
@@ -1133,17 +1137,22 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onOpen, onNewWork
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {visible.map((w) => {
             const assignee = users.find((u) => u.id === w.assignedTo);
+            const site = sites.find((s) => s.id === w.siteId);
             return (
               <div key={w.id} style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <button onClick={() => onOpen(w.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
                     <div style={{ fontSize: 13.5, fontWeight: 700, color: T.ink }}>{w.description}</div>
-                    <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>#{w.code} · {w.equipmentId ? w.equipmentId.toUpperCase() : "General"}</div>
+                    <div style={{ fontSize: 11, color: T.sub, ...mono, marginTop: 2 }}>#{w.code}</div>
                   </button>
                   <Badge tone={w.priority === "Highest" ? "red" : "amber"}>{w.priority}</Badge>
                 </div>
+                <div style={{ fontSize: 12, color: T.ink }}>
+                  {w.equipmentName ? w.equipmentName : <span style={{ color: T.sub, fontStyle: "italic" }}>General</span>}
+                  {site && <span style={{ color: T.sub }}> · {site.name}</span>}
+                </div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  <Badge tone={w.type === "Corrective" ? "amber" : "teal"}>{w.type}</Badge>
+                  <Badge tone={typeBadgeTone(w.type)}>{w.type}</Badge>
                   <span style={{ fontSize: 12, color: T.sub, alignSelf: "center" }}>{assignee?.name}</span>
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -1159,20 +1168,24 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onOpen, onNewWork
       ) : (
         <div style={{ border: `1px solid ${T.line}`, borderRadius: 14, overflow: "hidden" }}>
           <div style={{ ...rowGrid, background: T.panel, fontWeight: 800, fontSize: 11, color: T.sub, textTransform: "uppercase", letterSpacing: 0.3 }}>
-            <div>Code</div><div>Description</div><div>Type</div><div>Assigned</div><div>Priority</div><div>Status</div><div></div><div>Report</div>
+            <div>Code</div><div>Description</div><div>Type</div><div>Priority</div><div>Asset</div><div>Assigned</div><div>Status</div><div></div><div>Report</div>
           </div>
           {visible.map((w) => {
             const assignee = users.find((u) => u.id === w.assignedTo);
+            const site = sites.find((s) => s.id === w.siteId);
             return (
               <div key={w.id} style={rowGrid}>
                 <button onClick={() => onOpen(w.id)} style={{ ...mono, fontSize: 12.5, color: T.teal, fontWeight: 700, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>#{w.code}</button>
                 <button onClick={() => onOpen(w.id)} style={{ background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{w.description}</div>
-                  <div style={{ fontSize: 11, color: T.sub, ...mono }}>{w.equipmentId ? w.equipmentId.toUpperCase() : "General"}</div>
                 </button>
-                <div><Badge tone={w.type === "Corrective" ? "amber" : "teal"}>{w.type}</Badge></div>
-                <div style={{ fontSize: 12.5, color: T.ink }}>{assignee?.name}</div>
+                <div><Badge tone={typeBadgeTone(w.type)}>{w.type}</Badge></div>
                 <div><Badge tone={w.priority === "Highest" ? "red" : "amber"}>{w.priority}</Badge></div>
+                <div style={{ fontSize: 12, color: T.ink }}>
+                  {w.equipmentName ? <div style={{ fontWeight: 600 }}>{w.equipmentName}</div> : <span style={{ color: T.sub, fontStyle: "italic" }}>General</span>}
+                  <div style={{ fontSize: 11, color: T.sub }}>{site?.name}</div>
+                </div>
+                <div style={{ fontSize: 12.5, color: T.ink }}>{assignee?.name}</div>
                 <div><Badge tone={statusBadgeTone(w.status)}>{w.status}</Badge></div>
                 <div><button onClick={() => onOpenAction(w.id)} style={{ ...smallBtn, background: T.ink, color: "#fff" }}>Action</button></div>
                 <div>{uploadBtn(w)}</div>
@@ -1186,7 +1199,7 @@ function WorkOrders({ workOrders, users, user, onUploadReport, onOpen, onNewWork
   );
 }
 const statusBadgeTone = (s) => s === "Late" ? "red" : s === "Closed" ? "gray" : s === "Pending" ? "amber" : s === "In Progress" ? "violet" : "teal";
-const rowGrid = { display: "grid", gridTemplateColumns: "60px 1.8fr 90px 110px 80px 90px 80px 120px", gap: 10, alignItems: "center", padding: "11px 16px", borderTop: `1px solid ${T.line}` };
+const rowGrid = { display: "grid", gridTemplateColumns: "56px 1.6fr 100px 80px 1.1fr 100px 90px 74px 110px", gap: 10, alignItems: "center", padding: "11px 16px", borderTop: `1px solid ${T.line}` };
 
 /* ------------------------------------------------------------------ */
 /*  Work Order Administration modal — mirrors the Fiix WO screen       */
@@ -1258,7 +1271,7 @@ function NewWorkOrderModal({ open, preset, sites, users, onClose, onCreate }) {
             <div>
               <div style={labelStyle}>Type</div>
               <select value={type} onChange={(e) => setType(e.target.value)} style={{ ...selStyle, width: "100%" }}>
-                {["Preventive", "Corrective", "Other"].map((t) => <option key={t}>{t}</option>)}
+                {WO_TYPES.map((t) => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div>
@@ -1292,18 +1305,31 @@ function NewWorkOrderModal({ open, preset, sites, users, onClose, onCreate }) {
 const WO_TABS = ["General", "Completion", "Labor Tasks", "Parts", "Meter Readings", "Files", "Work Log"];
 
 /* ------------------------------------------------------------------ */
-/*  Action Terminal — the assignee's (or Admin/Manager's) one place to  */
+/*  Action panel — the assignee's (or Admin/Manager's) one place to    */
 /*  close a work order with a report, mark it pending with a reason,   */
-/*  or (Admin/Manager only) manually override the status                */
+/*  or (Admin/Manager only) set another status directly                */
 /* ------------------------------------------------------------------ */
-const statusHex = { Open: "#0E9C8F", "In Progress": "#6D5DD3", Pending: "#D97706", Late: "#DC4C4C", Closed: "#8B98A5" };
 
-function ActionTerminal({ wo, users, onClose, onCloseWithReport, onUpdatePending, onManualStatus, role, currentUserId }) {
+function ActionTerminal({ wo, users, onClose, onCloseWithReport, onUpdatePending, onUpdateStatusWithNote, role, currentUserId }) {
   const isMobile = useIsMobile();
-  const [reason, setReason] = useState("");
-  const [reasonTouched, setReasonTouched] = useState(false);
   const fileRef = useRef();
-  React.useEffect(() => { setReason(""); setReasonTouched(false); }, [wo?.id]);
+  const [status, setStatus] = useState("Open");
+  const [note, setNote] = useState("");
+  const [noteTouched, setNoteTouched] = useState(false);
+  const [file, setFile] = useState(null);
+  const [fileTouched, setFileTouched] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (!wo) return;
+    setStatus(wo.status || "Open");
+    setNote(wo.pendingReason || "");
+    setNoteTouched(false);
+    setFile(null);
+    setFileTouched(false);
+    setSaving(false);
+  }, [wo?.id]);
+
   if (!wo) return null;
 
   const canEdit = role === "Admin" || role === "Manager";
@@ -1311,79 +1337,91 @@ function ActionTerminal({ wo, users, onClose, onCloseWithReport, onUpdatePending
   const canAct = canEdit || isAssignee;
   const assignee = users.find((u) => u.id === wo.assignedTo);
 
-  const termBtn = { background: "#132038", border: "1px solid #24344F", color: "#D7E2EA", borderRadius: 6, padding: "7px 12px", fontSize: 12, fontFamily: "inherit", cursor: "pointer" };
-  const promptLine = { display: "flex", gap: 7, marginBottom: 2 };
+  // Technicians (the assignee) get the two disciplined choices — Pending
+  // or Closed. Anything else (Open, In Progress, Late) is an Admin/Manager
+  // "override" only, so a technician can't quietly bounce a work order
+  // between arbitrary states without a report or a reason.
+  const statusOptions = canEdit ? ["Open", "In Progress", "Pending", "Late", "Closed"] : ["Pending", "Closed"];
+  const isPending = status === "Pending";
+  const isClosing = status === "Closed";
 
-  const submitPending = () => {
-    if (!reason.trim()) { setReasonTouched(true); return; }
-    onUpdatePending(wo.id, reason.trim());
-    onClose();
+  const handleSave = async () => {
+    if (isPending && !note.trim()) { setNoteTouched(true); return; }
+    if (isClosing && !file) { setFileTouched(true); return; }
+    setSaving(true);
+    try {
+      if (isClosing) {
+        await onCloseWithReport(wo.id, file);
+      } else if (isPending) {
+        onUpdatePending(wo.id, note.trim());
+      } else {
+        await onUpdateStatusWithNote(wo.id, status, note.trim() || null, file);
+      }
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: isMobile ? 0 : 20 }} onClick={onClose}>
-      <div style={{
-        background: "#0B1220", color: "#D7E2EA", fontFamily: "'JetBrains Mono','SFMono-Regular',Consolas,monospace",
-        borderRadius: isMobile ? 0 : 14, width: isMobile ? "100%" : 480, maxWidth: 480, height: isMobile ? "100vh" : "auto",
-        maxHeight: isMobile ? "100vh" : "85vh", overflowY: "auto", border: "1px solid #1E293B",
-      }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 14px", background: "#111827", borderBottom: "1px solid #1E293B", position: "sticky", top: 0 }}>
-          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#DC4C4C", display: "inline-block" }} />
-          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#D97706", display: "inline-block" }} />
-          <span style={{ width: 10, height: 10, borderRadius: "50%", background: "#0E9C8F", display: "inline-block" }} />
-          <span style={{ marginLeft: 8, fontSize: 12, color: "#8B98A5" }}>wo-{wo.code}@noc-cmms:~</span>
-          <button onClick={onClose} style={{ marginLeft: "auto", background: "none", border: "none", color: "#8B98A5", cursor: "pointer", display: "flex" }}><X size={15} /></button>
-        </div>
-
-        <div style={{ padding: 18, fontSize: 12.5, lineHeight: 1.8 }}>
-          <div style={promptLine}><span style={{ color: "#0E9C8F" }}>$</span><span>status --show</span></div>
-          <div style={{ marginLeft: 16, marginBottom: 14 }}>
-            WO #{wo.code} · <span style={{ color: statusHex[wo.status] || "#8B98A5", fontWeight: 700 }}>{wo.status}</span>
-            <div style={{ color: "#5B6472", fontSize: 11.5, marginTop: 3 }}>assigned to {assignee?.name || "—"}</div>
-            {wo.pendingReason && <div style={{ color: "#D97706", fontSize: 11.5, marginTop: 3 }}>pending reason: "{wo.pendingReason}"</div>}
-            {wo.status === "Closed" && <div style={{ color: "#0E9C8F", fontSize: 11.5, marginTop: 3 }}>closed{wo.completedBy ? ` by ${wo.completedBy}` : ""}{wo.dateCompleted ? ` on ${wo.dateCompleted}` : ""}</div>}
+    <div style={isMobile ? mobileOverlayStyle() : overlayStyle} onClick={onClose}>
+      <div style={isMobile ? mobileModalStyle({ ...modalStyle, maxWidth: 480 }) : { ...modalStyle, maxWidth: 480 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <div>
+            <div style={{ fontSize: 12.5, color: T.sub, fontWeight: 700 }}>Work Order <span style={{ ...mono }}>#{wo.code}</span></div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: T.ink, marginTop: 2 }}>{wo.description}</div>
           </div>
-
-          {wo.status !== "Closed" && canAct && (
-            <>
-              <div style={promptLine}><span style={{ color: "#0E9C8F" }}>$</span><span>action --close</span></div>
-              <div style={{ marginLeft: 16, marginBottom: 16 }}>
-                <div style={{ color: "#5B6472", fontSize: 11.5, marginBottom: 6 }}>Upload the completion report to close this work order.</div>
-                <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
-                  onChange={(e) => { if (e.target.files[0]) { onCloseWithReport(wo.id, e.target.files[0]); onClose(); } }} />
-                <button onClick={() => fileRef.current.click()} style={termBtn}>upload report &amp; close</button>
-              </div>
-
-              <div style={promptLine}><span style={{ color: "#D97706" }}>$</span><span>action --pending</span></div>
-              <div style={{ marginLeft: 16, marginBottom: 16 }}>
-                <div style={{ color: "#5B6472", fontSize: 11.5, marginBottom: 6 }}>Not done yet? Say why — a reason is required.</div>
-                <textarea value={reason} onChange={(e) => { setReason(e.target.value); if (reasonTouched) setReasonTouched(false); }} rows={2}
-                  placeholder="e.g. waiting on parts…"
-                  style={{ width: "100%", background: "#0B1220", border: `1px solid ${reasonTouched && !reason.trim() ? "#DC4C4C" : "#1E293B"}`, borderRadius: 6, padding: "8px 10px", color: "#D7E2EA", fontFamily: "inherit", fontSize: 12.5, resize: "vertical", marginBottom: 6 }} />
-                {reasonTouched && !reason.trim() && <div style={{ color: "#DC4C4C", fontSize: 11, marginBottom: 6 }}>reason required — cannot save pending without one</div>}
-                <button onClick={submitPending} style={termBtn}>save as pending</button>
-              </div>
-            </>
-          )}
-
-          {canEdit && (
-            <>
-              <div style={promptLine}><span style={{ color: "#8B98A5" }}>$</span><span>status --override</span></div>
-              <div style={{ marginLeft: 16, marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <select defaultValue="" onChange={(e) => { if (e.target.value) { onManualStatus(wo.id, e.target.value); onClose(); } }}
-                  style={{ background: "#132038", border: "1px solid #24344F", color: "#D7E2EA", borderRadius: 6, padding: "6px 8px", fontSize: 12, fontFamily: "inherit" }}>
-                  <option value="">— set status manually —</option>
-                  {["Open", "In Progress", "Pending", "Late", "Closed"].filter((s) => s !== wo.status).map((s) => <option key={s} value={s}>{s}</option>)}
-                </select>
-                <span style={{ fontSize: 10.5, color: "#5B6472" }}>admin override — skips the upload/reason requirement</span>
-              </div>
-            </>
-          )}
-
-          {!canAct && wo.status !== "Closed" && (
-            <div style={{ color: "#5B6472", fontSize: 11.5, marginTop: 4 }}># only the assigned technician or an Admin/Manager can act on this work order</div>
-          )}
+          <button onClick={onClose} style={iconBtn}><X size={18} /></button>
         </div>
+        <div style={{ fontSize: 12, color: T.sub, marginBottom: 16 }}>Assigned to {assignee?.name || "—"}</div>
+
+        {wo.status === "Closed" ? (
+          <div style={{ background: "#E4F5F3", border: `1px solid ${T.teal}`, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: T.tealDeep }}>
+            <CheckCircle2 size={13} style={{ verticalAlign: -2, marginRight: 5 }} />
+            Closed{wo.completedBy ? ` by ${wo.completedBy}` : ""}{wo.dateCompleted ? ` on ${wo.dateCompleted}` : ""}
+          </div>
+        ) : !canAct ? (
+          <div style={{ background: T.panel, borderRadius: 10, padding: "10px 12px", fontSize: 12.5, color: T.sub }}>
+            Only the assigned technician or an Admin/Manager can update this work order.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <div>
+              <div style={labelStyle}>Work order status</div>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ ...selStyle, width: "100%" }}>
+                {statusOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              {!canEdit && <div style={{ fontSize: 11, color: T.sub, marginTop: 4 }}>Only Admin/Manager can set other statuses (Open, In Progress, Late).</div>}
+            </div>
+
+            <div>
+              <div style={labelStyle}>{isClosing ? "Completion report (required)" : "Attach a file (optional)"}</div>
+              <div style={{ border: `1.5px dashed ${fileTouched && isClosing && !file ? T.red : T.line}`, borderRadius: 10, padding: 12, display: "flex", alignItems: "center", gap: 10 }}>
+                <FileText size={16} color={T.sub} />
+                <div style={{ flex: 1, fontSize: 12.5, color: file ? T.ink : T.sub, fontWeight: file ? 700 : 400 }}>
+                  {file ? file.name : isClosing ? "A completion report is required to close this work order" : "PDF or Word — optional"}
+                </div>
+                <input ref={fileRef} type="file" accept=".pdf,.doc,.docx" style={{ display: "none" }}
+                  onChange={(e) => { if (e.target.files[0]) { setFile(e.target.files[0]); setFileTouched(false); } }} />
+                <button onClick={() => fileRef.current.click()} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Upload</button>
+              </div>
+              {fileTouched && isClosing && !file && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>A report is required to close this work order.</div>}
+            </div>
+
+            <div>
+              <div style={labelStyle}>{isPending ? "Reason (required)" : "Notes (optional)"}</div>
+              <textarea value={note} onChange={(e) => { setNote(e.target.value); if (noteTouched) setNoteTouched(false); }} rows={3}
+                placeholder={isPending ? "e.g. waiting on parts…" : "Anything worth noting…"}
+                style={{ width: "100%", border: `1px solid ${noteTouched && isPending && !note.trim() ? T.red : T.line}`, borderRadius: 9, padding: "9px 11px", fontSize: 12.5, color: T.ink, resize: "vertical", fontFamily: "inherit" }} />
+              {noteTouched && isPending && !note.trim() && <div style={{ fontSize: 11, color: T.red, marginTop: 4 }}>A reason is required to save this as pending.</div>}
+            </div>
+
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={handleSave} disabled={saving} style={{ ...smallBtn, opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "Save"}</button>
+              <button onClick={onClose} style={{ ...smallBtn, background: T.panel, color: T.ink }}>Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1437,7 +1475,7 @@ function WorkOrderModal({ wo, sites, users, onClose, onSave, onUploadReport, onC
               <div>
                 <div style={labelStyle}>Maintenance type</div>
                 <select value={draft.type} disabled={!canEdit} onChange={(e) => field("type", e.target.value)} style={{ ...selStyle, width: "100%" }}>
-                  {["Preventive", "Corrective", "Other"].map((s) => <option key={s}>{s}</option>)}
+                  {WO_TYPES.map((s) => <option key={s}>{s}</option>)}
                 </select>
               </div>
               <div>
@@ -1928,7 +1966,7 @@ function Analytics({ sites, workOrders, users, onDrillDown }) {
     return counts;
   };
   const byStatus = countBy("status", ["Open", "In Progress", "Pending", "Late", "Closed"]);
-  const byType = countBy("type", ["Preventive", "Corrective", "Other"]);
+  const byType = countBy("type", WO_TYPES);
   const byPriority = countBy("priority", ["Low", "High", "Highest"]);
 
   // Keep the id alongside the label so bars can drill down precisely
@@ -1980,7 +2018,7 @@ function Analytics({ sites, workOrders, users, onDrillDown }) {
           {Object.entries(byStatus).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxStatus} tone={statusTone[k]} onClick={() => drillStatus(k)} />)}
         </AnalyticsPanel>
         <AnalyticsPanel title="Work orders by type" icon={Wrench}>
-          {Object.entries(byType).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxType} tone={k === "Corrective" ? T.amber : k === "Preventive" ? T.teal : T.violet} onClick={() => drillType(k)} />)}
+          {Object.entries(byType).map(([k, v]) => <BarRow key={k} label={k} value={v} max={maxType} tone={typeHex(k)} onClick={() => drillType(k)} />)}
           <div style={{ height: 1, background: T.line, margin: "4px 0" }} />
           {Object.entries(byPriority).map(([k, v]) => <BarRow key={k} label={k + " priority"} value={v} max={maxPriority} tone={k === "Highest" ? T.red : k === "High" ? T.amber : T.teal} onClick={() => drillPriority(k)} />)}
         </AnalyticsPanel>
@@ -2034,7 +2072,7 @@ function MaintenanceCalendar({ workOrders, sites, users, user, onOpen }) {
   });
 
   const byDate = (iso) => filtered.filter((w) => w.dueDate === iso);
-  const toneFor = (w) => (w.status === "Late" ? "red" : w.type === "Corrective" ? "amber" : "teal");
+  const toneFor = (w) => (w.status === "Late" ? "red" : typeBadgeTone(w.type));
 
   return (
     <div>
@@ -2088,7 +2126,7 @@ function MaintenanceCalendar({ workOrders, sites, users, user, onOpen }) {
                       const site = sites.find((s) => s.id === w.siteId);
                       return (
                         <button key={w.id} onClick={() => onOpen(w.id)} style={{
-                          textAlign: "left", border: `1px solid ${T.line}`, borderLeft: `3px solid ${toneFor(w) === "red" ? T.red : toneFor(w) === "amber" ? T.amber : T.teal}`,
+                          textAlign: "left", border: `1px solid ${T.line}`, borderLeft: `3px solid ${toneHex[toneFor(w)] || T.teal}`,
                           borderRadius: 8, padding: "7px 8px", background: "#fff", cursor: "pointer", display: "flex", flexDirection: "column", gap: 3,
                         }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -2232,6 +2270,25 @@ export default function App() {
   };
   const updateWorkOrderPending = (woId, reason) => {
     const fields = { status: "Pending", pendingReason: reason };
+    setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...fields } : w));
+    dbUpdateWorkOrder(woId, fields).catch(onDbError);
+  };
+  // Admin/Manager setting a status directly (Open/In Progress/Late), with
+  // an optional note and an optional attached file — used by the Action
+  // panel's status dropdown for anything other than Pending or Closed,
+  // which have their own dedicated, required-field flows above.
+  const updateWorkOrderStatusWithNote = async (woId, status, note, file) => {
+    let fields = { status, pendingReason: note || null };
+    if (file) {
+      if (file.size > 50 * 1024 * 1024) { alert("That file is over 50MB — the current storage plan's per-file limit. Try a smaller file, or compress it first."); return; }
+      try {
+        const { url } = await uploadReportFile(file, `work-orders/${woId}`);
+        fields = { ...fields, report: file.name, reportUrl: url, reportUploadedBy: user?.id };
+      } catch (err) {
+        alert("Upload failed: " + (err.message || err));
+        return;
+      }
+    }
     setWorkOrders((prev) => prev.map((w) => w.id === woId ? { ...w, ...fields } : w));
     dbUpdateWorkOrder(woId, fields).catch(onDbError);
   };
@@ -2464,7 +2521,7 @@ export default function App() {
           {page === "dashboard" && <SitesDashboard sites={visibleSitesFor(user, sites)} workOrders={workOrders} setPage={setPage} setActiveSite={setActiveSite} role={user.role} onAddSite={addSite} onUpdateSite={updateSite} onDeleteSite={deleteSite} />}
           {page === "calendar" && <MaintenanceCalendar workOrders={workOrders} sites={sites} users={users} user={user} onOpen={setOpenWoId} />}
           {page === "assets" && <AssetTree sites={visibleSitesFor(user, sites)} activeSite={activeSite} setActiveSite={setActiveSite} onOpenEquipment={setOpenEqId} role={user.role} onAddEquipment={addEquipment} onDeleteEquipment={deleteEquipment} onAddRoom={addRoom} onDeleteRoom={deleteRoom} onAddFloor={addFloor} onDeleteFloor={deleteFloor} equipmentTypes={equipmentTypes} onAddEquipmentType={addEquipmentType} />}
-          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} user={user} onUploadReport={uploadWOReport} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})}
+          {page === "workorders" && <WorkOrders workOrders={workOrders} users={users} sites={sites} user={user} onUploadReport={uploadWOReport} onOpen={setOpenWoId} onNewWorkOrder={() => setNewWODraft({})}
             filterToggle={woFilterToggle} onFilterToggleChange={setWoFilterToggle} preset={woPreset} onClearPreset={() => setWoPreset(null)} onOpenAction={setActionWoId} />}
           {page === "analytics" && <PermGate allow={["Admin", "Manager"]} role={user.role} fallback={<AccessDenied />}>
             <Analytics sites={visibleSitesFor(user, sites)} workOrders={workOrders} users={users} onDrillDown={goToWorkOrders} />
@@ -2483,7 +2540,7 @@ export default function App() {
             setNewWODraft({ siteId: ownerSite?.id, equipmentId: openEquipment.id, equipmentName: openEquipment.name });
           }} />
         <WorkOrderModal wo={workOrders.find((w) => w.id === openWoId)} sites={sites} users={users} onClose={() => setOpenWoId(null)} onSave={saveWorkOrder} onUploadReport={uploadWOReport} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} onOpenAction={setActionWoId} role={user.role} currentUserId={user.id} />
-        <ActionTerminal wo={workOrders.find((w) => w.id === actionWoId)} users={users} onClose={() => setActionWoId(null)} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} onManualStatus={setWOStatus} role={user.role} currentUserId={user.id} />
+        <ActionTerminal wo={workOrders.find((w) => w.id === actionWoId)} users={users} onClose={() => setActionWoId(null)} onCloseWithReport={closeWorkOrderWithReport} onUpdatePending={updateWorkOrderPending} onUpdateStatusWithNote={updateWorkOrderStatusWithNote} role={user.role} currentUserId={user.id} />
         <NewWorkOrderModal open={!!newWODraft} preset={newWODraft} sites={visibleSitesFor(user, sites)} users={users} onClose={() => setNewWODraft(null)} onCreate={addWorkOrder} />
       </div>
     </MobileCtx.Provider>
